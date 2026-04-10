@@ -4,6 +4,7 @@ import DashboardLayout from "@/components/dashboard/DashboardLayout";
 import ApiForm from "@/components/ui/ApiForm";
 import Badge from "@/components/ui/Badge";
 import EmptyState from "@/components/ui/EmptyState";
+import FileDisplay from "@/components/ui/FileDisplay";
 import FileUploadField from "@/components/ui/FileUploadField";
 import FormField from "@/components/ui/FormField";
 import Panel from "@/components/ui/Panel";
@@ -183,6 +184,11 @@ export default function AssignmentsPage({
                   <div className="rounded-[22px] bg-[#faf7ff] p-4">
                     <p className="font-semibold text-slate-950">Instructions</p>
                     <p className="mt-2 text-sm text-slate-600">{assignment.instructions || "No extra instructions provided."}</p>
+                    {assignment.attachmentUrl ? (
+                      <div className="mt-4">
+                        <FileDisplay url={assignment.attachmentUrl} title={assignment.title} />
+                      </div>
+                    ) : null}
                   </div>
                   <div className="space-y-4">
                     <button
@@ -248,9 +254,16 @@ export default function AssignmentsPage({
                           <div>
                             <p className="font-semibold text-slate-950">{gradedSubmission.student.fullName}</p>
                             <p className="text-sm text-slate-600">{gradedSubmission.student.studentId ?? "No ID"}</p>
-                            <p className="mt-2 text-sm text-slate-600">
-                              {submission.textSubmission || submission.linkUrl || submission.fileUrl || "Submission recorded"}
-                            </p>
+                            {submission.textSubmission ? <p className="mt-2 text-sm text-slate-600">{submission.textSubmission}</p> : null}
+                            {submission.linkUrl ? (
+                              <a href={submission.linkUrl} target="_blank" rel="noreferrer" className="mt-2 inline-flex text-sm font-semibold text-[#6b00ff]">
+                                Open submitted link
+                              </a>
+                            ) : null}
+                            {submission.fileUrl ? <div className="mt-3"><FileDisplay url={submission.fileUrl} title="Submission file" /></div> : null}
+                            {!submission.textSubmission && !submission.linkUrl && !submission.fileUrl ? (
+                              <p className="mt-2 text-sm text-slate-600">Submission recorded</p>
+                            ) : null}
                           </div>
                           <div className="min-w-[280px]">
                             <ApiForm

@@ -6,6 +6,7 @@ import ApiActionButton from "@/components/ui/ApiActionButton";
 import ApiForm from "@/components/ui/ApiForm";
 import Badge from "@/components/ui/Badge";
 import EmptyState from "@/components/ui/EmptyState";
+import FileDisplay from "@/components/ui/FileDisplay";
 import FormField from "@/components/ui/FormField";
 import ImageUploadField from "@/components/ui/ImageUploadField";
 import Panel from "@/components/ui/Panel";
@@ -337,7 +338,22 @@ export default function LessonContentPage({
                   <Badge tone="purple">{resource.type}</Badge>
                 </div>
                 <p className="mt-3 font-semibold text-slate-950">{resource.title}</p>
-                <p className="mt-2 break-all text-sm text-slate-600">{resource.externalUrl || resource.fileUrl || "Internal resource"}</p>
+                {resource.externalUrl ? (
+                  <a
+                    href={resource.externalUrl}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="mt-2 inline-flex text-sm font-semibold text-[#6b00ff]"
+                  >
+                    Open external resource
+                  </a>
+                ) : resource.fileUrl ? (
+                  <div className="mt-3">
+                    <FileDisplay url={resource.fileUrl} title={resource.title} />
+                  </div>
+                ) : (
+                  <p className="mt-2 text-sm text-slate-600">Internal resource</p>
+                )}
               </div>
             ))}
           </div>

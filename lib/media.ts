@@ -2,6 +2,11 @@ const ALLOWED_IMAGE_DATA_URL = /^data:image\/(?:png|jpeg|jpg|webp|gif);base64,[a
 const ALLOWED_FILE_DATA_URL =
   /^data:(?:application\/pdf|application\/msword|application\/vnd\.openxmlformats-officedocument\.wordprocessingml\.document|text\/plain|text\/csv|application\/csv|image\/(?:png|jpeg|jpg|webp|gif));base64,[a-z0-9+/=]+$/i;
 
+function getMimeTypeFromDataUrl(value: string) {
+  const match = value.match(/^data:([^;]+);base64,/i);
+  return match?.[1]?.toLowerCase() ?? null;
+}
+
 function getYouTubeVideoId(url: URL) {
   const hostname = url.hostname.toLowerCase().replace(/^www\./, "");
 
@@ -148,4 +153,69 @@ export function readDataUrlText(value: string) {
   }
 
   return Buffer.from(match[1], "base64").toString("utf8");
+}
+
+export function getFileDisplayMeta(value?: string | null) {
+  if (!value) {
+    return null;
+  }
+
+  if (value.startsWith("data:")) {
+    const mimeType = getMimeTypeFromDataUrl(value);
+    const typeLabel =
+      mimeType === "application/pdf"
+        ? "Uploaded PDF file"
+        : mimeType === "application/msword"
+          ? "Uploaded DOC file"
+          : mimeType === "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+            ? "Uploaded DOCX file"
+            : mimeType === "text/plain"
+              ? "Uploaded text file"
+              : mimeType === "text/csv" || mimeType === "application/csv"
+                ? "Uploaded CSV file"
+                : mimeType?.startsWith("image/")
+                  ? "Uploaded image"
+                  : "Uploaded file";
+
+    return {
+      href: value,
+      label: typeLabel,
+      mimeType,
+      isImage: Boolean(mimeType?.startsWith("image/")),
+      isDataUrl: true,
+    };
+  }
+
+  if (/^https?:\/\//i.test(value)) {
+    try {
+      const parsedUrl = new URL(value);
+      const fileName = parsedUrl.pathname.split("/").filter(Boolean).pop();
+      const normalizedName = fileName ? decodeURIComponent(fileName) : parsedUrl.hostname;
+      const extension = normalizedName.includes(".") ? normalizedName.split(".").pop()?.toLowerCase() : null;
+
+      return {
+        href: value,
+        label: normalizedName || "External file",
+        mimeType: extension ? `.${extension}` : null,
+        isImage: Boolean(extension && ["png", "jpg", "jpeg", "webp", "gif"].includes(extension)),
+        isDataUrl: false,
+      };
+    } catch {
+      return {
+        href: value,
+        label: "External file",
+        mimeType: null,
+        isImage: false,
+        isDataUrl: false,
+      };
+    }
+  }
+
+  return {
+    href: value,
+    label: "File",
+    mimeType: null,
+    isImage: false,
+    isDataUrl: false,
+  };
 }
