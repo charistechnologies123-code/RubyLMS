@@ -9,6 +9,7 @@ import { generateStudentId, userSummarySelect } from "@/lib/users";
 async function handler(req: AuthedNextApiRequest, res: NextApiResponse) {
   if (req.method === "GET") {
     const users = await prisma.user.findMany({
+      where: { archivedAt: null },
       select: userSummarySelect,
       orderBy: { createdAt: "desc" },
     });
@@ -68,6 +69,7 @@ async function handler(req: AuthedNextApiRequest, res: NextApiResponse) {
         status: status ?? "ACTIVE",
         avatarUrl: normalizedAvatarUrl ?? null,
         studentId: role === "STUDENT" ? studentId || generateStudentId(fullName, studentCount) : null,
+        archivedAt: null,
       },
       select: userSummarySelect,
     });

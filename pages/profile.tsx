@@ -67,7 +67,7 @@ export default function ProfilePage({
             <Badge tone={user.status === "ACTIVE" ? "green" : "red"}>{user.status}</Badge>
           </div>
           <div className="mt-5 space-y-2 text-sm text-slate-600">
-            <p>Student ID: {user.studentId ?? "Not applicable"}</p>
+            {user.role === "STUDENT" ? <p>Student ID: {user.studentId ?? "Not assigned"}</p> : null}
             <p>Last login: {formatDate(user.lastLoginAt)}</p>
             <p>Member since: {formatDate(user.createdAt)}</p>
           </div>

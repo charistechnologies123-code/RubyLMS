@@ -1,4 +1,6 @@
 const ALLOWED_IMAGE_DATA_URL = /^data:image\/(?:png|jpeg|jpg|webp|gif);base64,[a-z0-9+/=]+$/i;
+const ALLOWED_FILE_DATA_URL =
+  /^data:(?:application\/pdf|application\/msword|application\/vnd\.openxmlformats-officedocument\.wordprocessingml\.document|text\/plain|text\/csv|application\/csv|image\/(?:png|jpeg|jpg|webp|gif));base64,[a-z0-9+/=]+$/i;
 
 function getYouTubeVideoId(url: URL) {
   const hostname = url.hostname.toLowerCase().replace(/^www\./, "");
@@ -110,4 +112,40 @@ export function normalizeEmbedInput(value: string | undefined, fieldLabel: strin
         : `${fieldLabel} must be a valid http(s) URL.`,
     );
   }
+}
+
+export function normalizeFileInput(value: string | undefined, fieldLabel: string) {
+  if (typeof value === "undefined") {
+    return undefined;
+  }
+
+  const trimmedValue = value.trim();
+
+  if (!trimmedValue) {
+    return null;
+  }
+
+  if (trimmedValue.startsWith("data:")) {
+    if (!ALLOWED_FILE_DATA_URL.test(trimmedValue)) {
+      throw new Error(`${fieldLabel} must be a supported uploaded file.`);
+    }
+
+    return trimmedValue;
+  }
+
+  if (/^https?:\/\//i.test(trimmedValue)) {
+    return trimmedValue;
+  }
+
+  throw new Error(`${fieldLabel} must be uploaded or provided as an http(s) URL.`);
+}
+
+export function readDataUrlText(value: string) {
+  const match = value.match(/^data:[^;]+;base64,(.+)$/i);
+
+  if (!match) {
+    throw new Error("Invalid uploaded text file.");
+  }
+
+  return Buffer.from(match[1], "base64").toString("utf8");
 }

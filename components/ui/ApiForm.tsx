@@ -34,7 +34,25 @@ export default function ApiForm({
     const form = event.currentTarget;
 
     const formData = new FormData(form);
-    const payload = Object.fromEntries(formData.entries());
+    const payload = Array.from(formData.entries()).reduce<Record<string, FormDataEntryValue | FormDataEntryValue[]>>(
+      (currentPayload, [key, value]) => {
+        const existingValue = currentPayload[key];
+
+        if (typeof existingValue === "undefined") {
+          currentPayload[key] = value;
+          return currentPayload;
+        }
+
+        if (Array.isArray(existingValue)) {
+          existingValue.push(value);
+          return currentPayload;
+        }
+
+        currentPayload[key] = [existingValue, value];
+        return currentPayload;
+      },
+      {},
+    );
 
     const response = await fetch(action, {
       method,

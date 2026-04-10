@@ -103,7 +103,12 @@ export default function Header({ setMobileOpen, collapsed, session }: Props) {
           <p className="font-heading text-sm text-slate-950">{session.fullName}</p>
           <p className="text-xs uppercase tracking-[0.2em] text-slate-500">{session.role}</p>
         </div>
-        <div className="flex h-11 w-11 items-center justify-center overflow-hidden rounded-2xl bg-[linear-gradient(135deg,#6b00ff,#ff1e1e)] font-heading text-sm text-white shadow-lg">
+        <button
+          type="button"
+          onClick={() => router.push("/profile")}
+          className="flex h-11 w-11 items-center justify-center overflow-hidden rounded-2xl bg-[linear-gradient(135deg,#6b00ff,#ff1e1e)] font-heading text-sm text-white shadow-lg"
+          aria-label="Open profile"
+        >
           {avatarUrl ? (
             // eslint-disable-next-line @next/next/no-img-element
             <img src={avatarUrl} alt={`${session.fullName} avatar`} className="h-full w-full object-cover" />
@@ -114,7 +119,7 @@ export default function Header({ setMobileOpen, collapsed, session }: Props) {
               .slice(0, 2)
               .join("")
           )}
-        </div>
+        </button>
         <button
           onClick={handleLogout}
           className="inline-flex h-10 w-10 items-center justify-center rounded-2xl border border-[#ffe1e1] bg-[#fff4f4] text-[#ff1e1e]"

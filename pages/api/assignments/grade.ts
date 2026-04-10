@@ -22,7 +22,7 @@ async function handler(req: AuthedNextApiRequest, res: NextApiResponse) {
     where: { id: submissionId },
     include: {
       assignment: {
-        include: { course: true },
+        include: { course: { include: { courseManagers: true } } },
       },
     },
   });
@@ -35,7 +35,8 @@ async function handler(req: AuthedNextApiRequest, res: NextApiResponse) {
   if (
     req.session.role !== "ADMIN" &&
     course.instructorId !== req.session.userId &&
-    course.createdById !== req.session.userId
+    course.createdById !== req.session.userId &&
+    !course.courseManagers.some((manager) => manager.userId === req.session.userId)
   ) {
     return res.status(403).json({ error: "Forbidden" });
   }

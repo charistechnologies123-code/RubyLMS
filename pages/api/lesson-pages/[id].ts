@@ -13,7 +13,11 @@ async function handler(req: AuthedNextApiRequest, res: NextApiResponse) {
     include: {
       lesson: {
         include: {
-          course: true,
+          course: {
+            include: {
+              courseManagers: true,
+            },
+          },
         },
       },
     },
@@ -23,7 +27,12 @@ async function handler(req: AuthedNextApiRequest, res: NextApiResponse) {
     return res.status(404).json({ error: "Module page not found." });
   }
 
-  if (!canManageCourse(req.session, page.lesson.course.instructorId)) {
+  if (
+    !canManageCourse(
+      req.session,
+      [page.lesson.course.instructorId, page.lesson.course.createdById, ...page.lesson.course.courseManagers.map((manager) => manager.userId)].filter(Boolean) as string[],
+    )
+  ) {
     return res.status(403).json({ error: "Forbidden" });
   }
 

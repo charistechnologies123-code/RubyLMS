@@ -5,11 +5,15 @@ import { useRouter } from "next/router";
 import toast from "react-hot-toast";
 import DashboardLayout from "@/components/dashboard/DashboardLayout";
 import ApiForm from "@/components/ui/ApiForm";
+import ApiActionButton from "@/components/ui/ApiActionButton";
 import Badge from "@/components/ui/Badge";
+import { useConfirmDialog } from "@/components/ui/ConfirmDialogProvider";
 import FormField from "@/components/ui/FormField";
 import Panel from "@/components/ui/Panel";
-import QuizBuilderField from "@/components/ui/QuizBuilderField";
 import { assertRoleAccess, getDefaultRouteForRole, getSessionFromPageContext } from "@/lib/auth";
+import { formatDate } from "@/lib/format";
+import { getManagedCourseWhere } from "@/lib/courseManagers";
+import { canStudentSubmitBeforeDueDate } from "@/lib/lms";
 import { canManageCourse } from "@/lib/permissions";
 import { prisma } from "@/lib/prisma";
 import { serialize } from "@/lib/serialize";
@@ -59,11 +63,14 @@ type QuizPageProps = {
     status: string;
     timeLimitMinutes: number;
     maxAttempts: number;
+    dueAt: string | null;
     courseId: string;
     lessonId: string | null;
     course: {
       id: string;
       title: string;
+      createdById?: string;
+      courseManagers?: Array<{ userId: string }>;
     };
     lesson: {
       id: string;
@@ -78,6 +85,17 @@ type QuizPageProps = {
     attemptNumber: number;
     score: number | null;
     isSubmitted: boolean;
+  }>;
+  managerAttempts: Array<{
+    id: string;
+    attemptNumber: number;
+    score: number | null;
+    isSubmitted: boolean;
+    submittedAt: string | null;
+    student: {
+      fullName: string;
+      studentId: string | null;
+    };
   }>;
 };
 
@@ -100,14 +118,29 @@ export async function getServerSideProps(
     where: {
       id: quizId,
       ...(session.role === "STUDENT"
-        ? { course: { enrollments: { some: { studentId: session.userId } } } }
+        ? {
+            status: "PUBLISHED",
+            archivedAt: null,
+            course: { status: "PUBLISHED", enrollments: { some: { studentId: session.userId } } },
+            OR: [{ lessonId: null }, { lesson: { status: "PUBLISHED" } }],
+          }
         : session.role === "INSTRUCTOR"
-          ? { course: { OR: [{ instructorId: session.userId }, { createdById: session.userId }] } }
+          ? { archivedAt: null, course: getManagedCourseWhere(session) }
           : {}),
     },
     include: {
       course: {
-        select: { id: true, title: true, instructorId: true },
+        select: {
+          id: true,
+          title: true,
+          instructorId: true,
+          createdById: true,
+          courseManagers: {
+            select: {
+              userId: true,
+            },
+          },
+        },
       },
       lesson: {
         select: { id: true, title: true },
@@ -135,7 +168,17 @@ export async function getServerSideProps(
               where: { studentId: session.userId },
               orderBy: { attemptNumber: "desc" },
             }
-          : false,
+          : {
+              orderBy: [{ submittedAt: "desc" }, { startedAt: "desc" }],
+              include: {
+                student: {
+                  select: {
+                    fullName: true,
+                    studentId: true,
+                  },
+                },
+              },
+            },
     },
   });
 
@@ -143,9 +186,13 @@ export async function getServerSideProps(
     return { redirect: { destination: "/quizzes", permanent: false } };
   }
 
-  const canManage = canManageCourse(session, quiz.course.instructorId);
+  const canManage = canManageCourse(
+    session,
+    [quiz.course.instructorId, quiz.course.createdById, ...quiz.course.courseManagers.map((manager) => manager.userId)].filter(Boolean) as string[],
+  );
   let activeAttempt: QuizAttemptData | null = null;
   let pastAttempts: QuizPageProps["pastAttempts"] = [];
+  let managerAttempts: QuizPageProps["managerAttempts"] = [];
 
   if (session.role === "STUDENT") {
     const attempts = (quiz.attempts as Array<{
@@ -172,23 +219,26 @@ export async function getServerSideProps(
         expiresAt: unfinishedAttempt.expiresAt.toISOString(),
         isSubmitted: unfinishedAttempt.isSubmitted,
       };
-    } else if (attempts.filter((attempt) => attempt.isSubmitted).length < quiz.maxAttempts) {
-      const createdAttempt = await prisma.quizAttempt.create({
-        data: {
-          quizId: quiz.id,
-          studentId: session.userId,
-          attemptNumber: attempts.length + 1,
-          expiresAt: new Date(Date.now() + quiz.timeLimitMinutes * 60 * 1000),
-        },
-      });
-
-      activeAttempt = {
-        id: createdAttempt.id,
-        attemptNumber: createdAttempt.attemptNumber,
-        expiresAt: createdAttempt.expiresAt.toISOString(),
-        isSubmitted: createdAttempt.isSubmitted,
-      };
     }
+  } else {
+    managerAttempts = ((quiz.attempts as Array<{
+      id: string;
+      attemptNumber: number;
+      score: number | null;
+      isSubmitted: boolean;
+      submittedAt: Date | null;
+      student: {
+        fullName: string;
+        studentId: string | null;
+      };
+    }>) ?? []).map((attempt) => ({
+      id: attempt.id,
+      attemptNumber: attempt.attemptNumber,
+      score: attempt.score,
+      isSubmitted: attempt.isSubmitted,
+      submittedAt: attempt.submittedAt?.toISOString() ?? null,
+      student: attempt.student,
+    }));
   }
 
   const initialQuestions: BuilderQuestion[] = quiz.quizQuestions.map((question) => ({
@@ -215,6 +265,7 @@ export async function getServerSideProps(
         status: quiz.status,
         timeLimitMinutes: quiz.timeLimitMinutes,
         maxAttempts: quiz.maxAttempts,
+        dueAt: quiz.dueAt?.toISOString() ?? null,
         courseId: quiz.courseId,
         lessonId: quiz.lessonId,
         course: {
@@ -238,6 +289,7 @@ export async function getServerSideProps(
       initialQuestions,
       activeAttempt,
       pastAttempts,
+      managerAttempts,
     },
   };
 }
@@ -258,6 +310,7 @@ function QuizAttemptWorkspace({
   pastAttempts: QuizPageProps["pastAttempts"];
 }) {
   const router = useRouter();
+  const { confirm } = useConfirmDialog();
   const [currentQuestionIndex, setCurrentQuestionIndex] = useState(0);
   const [answers, setAnswers] = useState<Record<string, string>>({});
   const [remainingSeconds, setRemainingSeconds] = useState(() =>
@@ -266,6 +319,18 @@ function QuizAttemptWorkspace({
   const [submitting, setSubmitting] = useState(false);
   const autoSubmittedRef = useRef(false);
   const submitQuiz = useCallback(async () => {
+    if (!autoSubmittedRef.current) {
+      const confirmed = await confirm({
+        title: "Submit quiz",
+        message: "Submit this quiz now? Once submitted, this attempt will be scored and closed.",
+        confirmLabel: "Submit quiz",
+      });
+
+      if (!confirmed) {
+        return;
+      }
+    }
+
     setSubmitting(true);
 
     const response = await fetch("/api/quizzes/submit", {
@@ -294,8 +359,8 @@ function QuizAttemptWorkspace({
         ? `Quiz submitted. Score: ${result.score}`
         : "Quiz submitted successfully.",
     );
-    router.replace(router.asPath);
-  }, [activeAttempt.id, answers, quiz.id, router]);
+    router.push("/quizzes");
+  }, [activeAttempt.id, answers, confirm, quiz.id, router]);
 
   useEffect(() => {
     const timer = window.setInterval(() => {
@@ -453,10 +518,13 @@ export default function QuizDetailPage({
   session,
   canManage,
   quiz,
-  initialQuestions,
   activeAttempt,
   pastAttempts,
+  managerAttempts,
 }: QuizPageProps) {
+  const router = useRouter();
+  const canEditQuiz = canManage && router.query.mode === "manage";
+
   return (
     <DashboardLayout
       role={session.role}
@@ -472,6 +540,7 @@ export default function QuizDetailPage({
               {quiz.lesson ? <Badge tone="slate">{quiz.lesson.title}</Badge> : null}
               <Badge tone="slate">{quiz.timeLimitMinutes} min</Badge>
               <Badge tone="slate">{quiz.maxAttempts} attempts</Badge>
+              {quiz.dueAt ? <Badge tone="red">Due {formatDate(quiz.dueAt)}</Badge> : null}
               <Badge tone={quiz.status === "PUBLISHED" ? "green" : "purple"}>{quiz.status}</Badge>
             </div>
             {quiz.instructions ? <p className="text-sm leading-7 text-slate-700">{quiz.instructions}</p> : null}
@@ -493,7 +562,7 @@ export default function QuizDetailPage({
         </div>
       </Panel>
 
-      {canManage ? (
+      {canEditQuiz ? (
         <Panel title="Edit Quiz" subtitle="Update the quiz settings and question set from one place.">
           <ApiForm
             action={`/api/quizzes/${quiz.id}`}
@@ -506,22 +575,122 @@ export default function QuizDetailPage({
             <FormField label="Title" name="title" defaultValue={quiz.title} required />
             <FormField label="Time limit (minutes)" name="timeLimitMinutes" type="number" defaultValue={quiz.timeLimitMinutes} required />
             <FormField label="Max attempts" name="maxAttempts" type="number" defaultValue={quiz.maxAttempts} />
+            <FormField
+              label="Status"
+              name="status"
+              as="select"
+              defaultValue={quiz.status}
+              options={[
+                { label: "Draft", value: "DRAFT" },
+                { label: "Published", value: "PUBLISHED" },
+              ]}
+            />
+            <FormField label="Due date" name="dueAt" type="datetime-local" defaultValue={quiz.dueAt ? quiz.dueAt.slice(0, 16) : ""} />
             <div className="md:col-span-2">
               <FormField label="Description" name="description" as="textarea" defaultValue={quiz.description ?? ""} />
             </div>
             <div className="md:col-span-2">
               <FormField label="Instructions" name="instructions" as="textarea" defaultValue={quiz.instructions ?? ""} />
             </div>
-            <QuizBuilderField initialQuestions={initialQuestions} />
           </ApiForm>
+          <div className="mt-4 flex flex-wrap gap-3">
+            <Link
+              href={`/quizzes/${quiz.id}/questions?mode=manage`}
+              className="inline-flex rounded-2xl border border-[#e8ddff] bg-[#faf7ff] px-5 py-3 text-sm font-semibold text-[#6b00ff]"
+            >
+              Edit questions
+            </Link>
+            {session.role === "ADMIN" ? (
+              <ApiActionButton
+                action={`/api/quizzes/${quiz.id}`}
+                method="PATCH"
+                payload={{ archived: true }}
+                successMessage="Quiz archived."
+                label="Archive quiz"
+                pendingLabel="Archiving..."
+              />
+            ) : null}
+          </div>
+        </Panel>
+      ) : null}
+
+      {canManage ? (
+        <Panel title="Attempts" subtitle="Review scores and clear attempts when a retake is needed.">
+          <div className="space-y-3">
+            {managerAttempts.length ? (
+              managerAttempts.map((attempt) => (
+                <div key={attempt.id} className="rounded-[20px] border border-[#efe6ff] bg-white p-4">
+                  <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
+                    <div>
+                      <div className="flex flex-wrap items-center gap-2">
+                        <Badge tone="purple">Attempt {attempt.attemptNumber}</Badge>
+                        <Badge tone={attempt.isSubmitted ? "green" : "purple"}>
+                          {attempt.isSubmitted ? "Submitted" : "In progress"}
+                        </Badge>
+                        <Badge tone="slate">
+                          {typeof attempt.score === "number" ? `${attempt.score} points` : "Awaiting score"}
+                        </Badge>
+                      </div>
+                      <p className="mt-3 font-semibold text-slate-950">{attempt.student.fullName}</p>
+                      <p className="mt-1 text-sm text-slate-600">
+                        {attempt.student.studentId ?? "No student ID"}
+                      </p>
+                    </div>
+                    <ApiActionButton
+                      action={`/api/quizzes/attempts/${attempt.id}`}
+                      method="DELETE"
+                      successMessage="Quiz attempt deleted."
+                      label="Delete attempt"
+                      pendingLabel="Deleting..."
+                      tone="danger"
+                      confirmMessage={`Delete attempt ${attempt.attemptNumber} for ${attempt.student.fullName}?`}
+                    />
+                  </div>
+                </div>
+              ))
+            ) : (
+              <p className="text-sm text-slate-600">No attempts recorded yet.</p>
+            )}
+          </div>
         </Panel>
       ) : activeAttempt ? (
         <QuizAttemptWorkspace quiz={quiz} activeAttempt={activeAttempt} pastAttempts={pastAttempts} />
       ) : (
-        <Panel title="Quiz Attempts">
-          <p className="text-sm text-slate-600">No attempt is available right now. You may have reached the maximum number of attempts.</p>
+        <Panel title="Ready To Start" subtitle="Confirm the details before the timer begins.">
+          <div className="space-y-4">
+            <div className="flex flex-wrap items-center gap-2">
+              <Badge tone="purple">{quiz.title}</Badge>
+              <Badge tone="slate">You have {quiz.maxAttempts - pastAttempts.filter((attempt) => attempt.isSubmitted).length} attempt(s) left</Badge>
+              <Badge tone="slate">Duration: {quiz.timeLimitMinutes} minute(s)</Badge>
+              {quiz.dueAt ? <Badge tone="red">Due {formatDate(quiz.dueAt)}</Badge> : null}
+            </div>
+            <p className="text-sm text-slate-600">{quiz.description || "No description provided."}</p>
+            <p className="text-sm text-slate-700">{quiz.instructions || "No extra instructions provided."}</p>
+            {quiz.status !== "PUBLISHED" ? (
+              <p className="text-sm text-slate-600">This quiz is not published yet.</p>
+            ) : quiz.dueAt && !canStudentSubmitBeforeDueDate(new Date(quiz.dueAt)) ? (
+              <p className="text-sm text-slate-600">This quiz is closed because the due date has passed.</p>
+            ) : pastAttempts.filter((attempt) => attempt.isSubmitted).length >= quiz.maxAttempts ? (
+              <p className="text-sm text-slate-600">You have reached the maximum number of attempts.</p>
+            ) : (
+              <StartQuizButton quizId={quiz.id} />
+            )}
+          </div>
         </Panel>
       )}
     </DashboardLayout>
+  );
+}
+
+function StartQuizButton({ quizId }: { quizId: string }) {
+  return (
+    <ApiActionButton
+      action="/api/quizzes/start"
+      method="PATCH"
+      payload={{ quizId }}
+      successMessage="Quiz started."
+      label="Start quiz"
+      pendingLabel="Starting..."
+    />
   );
 }

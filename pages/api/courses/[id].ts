@@ -3,6 +3,7 @@ import { prisma } from "@/lib/prisma";
 import { createAuditLog } from "@/lib/audit";
 import { normalizeImageInput } from "@/lib/media";
 import { withApiAuth, type AuthedNextApiRequest } from "@/lib/api";
+import { normalizeManagerIds } from "@/lib/courseManagers";
 import { canManageCourse } from "@/lib/permissions";
 
 async function handler(req: AuthedNextApiRequest, res: NextApiResponse) {
@@ -13,11 +14,20 @@ async function handler(req: AuthedNextApiRequest, res: NextApiResponse) {
     return res.status(404).json({ error: "Course not found." });
   }
 
-  if (!canManageCourse(req.session, course.instructorId)) {
+  const courseManagerIds = await prisma.courseManager.findMany({
+    where: { courseId },
+    select: { userId: true },
+  });
+
+  if (!canManageCourse(req.session, [course.instructorId, course.createdById, ...courseManagerIds.map((manager) => manager.userId)].filter(Boolean) as string[])) {
     return res.status(403).json({ error: "Forbidden" });
   }
 
   if (req.method === "DELETE") {
+    if (course.status !== "ARCHIVED") {
+      return res.status(400).json({ error: "Archive this course first before deleting permanently." });
+    }
+
     const dependencies = await prisma.course.findUnique({
       where: { id: courseId },
       select: {
@@ -70,12 +80,13 @@ async function handler(req: AuthedNextApiRequest, res: NextApiResponse) {
     return res.status(405).json({ error: "Method not allowed" });
   }
 
-  const { title, description, thumbnailUrl, status, instructorId } = req.body as {
+  const { title, description, thumbnailUrl, status, instructorId, managerIds } = req.body as {
     title?: string;
     description?: string;
     thumbnailUrl?: string;
     status?: "DRAFT" | "PUBLISHED" | "ARCHIVED";
     instructorId?: string;
+    managerIds?: string | string[];
   };
 
   let normalizedThumbnailUrl: string | null | undefined;
@@ -88,14 +99,34 @@ async function handler(req: AuthedNextApiRequest, res: NextApiResponse) {
     });
   }
 
+  if ((status === "ARCHIVED" || course.status === "ARCHIVED") && typeof status !== "undefined" && req.session.role !== "ADMIN") {
+    return res.status(403).json({ error: "Only admins can archive or restore courses." });
+  }
+
+  const normalizedManagerIds = normalizeManagerIds(managerIds);
+
   const updatedCourse = await prisma.course.update({
     where: { id: courseId },
     data: {
       title,
       description,
       thumbnailUrl: normalizedThumbnailUrl,
-      status,
+      status:
+        typeof status === "undefined"
+          ? undefined
+          : status === "ARCHIVED" && req.session.role !== "ADMIN"
+            ? course.status
+            : status,
       instructorId: req.session.role === "ADMIN" ? instructorId ?? course.instructorId : course.instructorId,
+      courseManagers:
+        req.session.role === "ADMIN"
+          ? {
+              deleteMany: {},
+              create: normalizedManagerIds.map((userId) => ({
+                userId,
+              })),
+            }
+          : undefined,
     },
   });
 

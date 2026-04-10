@@ -1,0 +1,11 @@
+CREATE TYPE "AssignmentStatus" AS ENUM ('DRAFT', 'PUBLISHED');
+
+ALTER TABLE "User"
+ADD COLUMN "archivedAt" TIMESTAMP(3);
+
+ALTER TABLE "Assignment"
+ADD COLUMN "status" "AssignmentStatus" NOT NULL DEFAULT 'DRAFT';
+
+ALTER TABLE "Quiz"
+ADD COLUMN "dueAt" TIMESTAMP(3),
+ADD COLUMN "archivedAt" TIMESTAMP(3);

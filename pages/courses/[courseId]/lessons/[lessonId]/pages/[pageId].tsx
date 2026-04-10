@@ -10,6 +10,7 @@ import FormField from "@/components/ui/FormField";
 import ImageUploadField from "@/components/ui/ImageUploadField";
 import Panel from "@/components/ui/Panel";
 import RichTextEditorField from "@/components/ui/RichTextEditorField";
+import { getManagedCourseWhere } from "@/lib/courseManagers";
 import { assertRoleAccess, getDefaultRouteForRole, getSessionFromPageContext } from "@/lib/auth";
 import { toEmbeddableUrl } from "@/lib/media";
 import { canManageCourse } from "@/lib/permissions";
@@ -37,6 +38,8 @@ type LessonContentLesson = {
     id: string;
     title: string;
     instructorId: string | null;
+    createdById?: string;
+    courseManagers?: Array<{ userId: string }>;
   };
   pages: LessonPageNavItem[];
 };
@@ -109,9 +112,9 @@ export async function getServerSideProps(
       id: lessonId,
       courseId,
       ...(session.role === "STUDENT"
-        ? { course: { enrollments: { some: { studentId: session.userId } } } }
+        ? { course: { status: "PUBLISHED", enrollments: { some: { studentId: session.userId } } }, status: "PUBLISHED" }
         : session.role === "INSTRUCTOR"
-          ? { course: { OR: [{ instructorId: session.userId }, { createdById: session.userId }] } }
+          ? { course: getManagedCourseWhere(session) }
           : {}),
     },
     include: {
@@ -120,6 +123,12 @@ export async function getServerSideProps(
           id: true,
           title: true,
           instructorId: true,
+          createdById: true,
+          courseManagers: {
+            select: {
+              userId: true,
+            },
+          },
         },
       },
       pages: {
@@ -175,7 +184,10 @@ export default function LessonContentPage({
   const pageIndex = lesson.pages.findIndex((currentPage) => currentPage.id === page.id);
   const previousPage = pageIndex > 0 ? lesson.pages[pageIndex - 1] : null;
   const nextPage = pageIndex >= 0 && pageIndex < lesson.pages.length - 1 ? lesson.pages[pageIndex + 1] : null;
-  const canManage = canManageCourse(session, lesson.course.instructorId);
+  const canManage = canManageCourse(
+    session,
+    [lesson.course.instructorId, lesson.course.createdById, ...(lesson.course.courseManagers ?? []).map((manager) => manager.userId)].filter(Boolean) as string[],
+  );
   const normalizedEmbedUrl = page.embedUrl
     ? (() => {
         try {
@@ -190,7 +202,7 @@ export default function LessonContentPage({
     <DashboardLayout
       role={session.role}
       session={session}
-      title={`Page ${page.order}: ${page.title}`}
+      title={page.title}
       description={`Module page inside ${lesson.title}.`}
     >
       <Panel className="mb-6">
@@ -198,7 +210,7 @@ export default function LessonContentPage({
           <div className="space-y-4">
             <div className="flex flex-wrap items-center gap-2">
               <Badge tone="purple">{lesson.title}</Badge>
-              <Badge tone="slate">Page {page.order}</Badge>
+              <Badge tone="slate">Page</Badge>
             </div>
             <div className="max-w-4xl space-y-4">
               <div

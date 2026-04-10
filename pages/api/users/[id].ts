@@ -21,6 +21,10 @@ async function handler(req: AuthedNextApiRequest, res: NextApiResponse) {
       return res.status(400).json({ error: "You cannot delete your own admin account." });
     }
 
+    if (!existingUser.archivedAt) {
+      return res.status(400).json({ error: "Archive this user first before deleting permanently." });
+    }
+
     const dependencies = await prisma.user.findUnique({
       where: { id: userId },
       select: {
@@ -67,7 +71,7 @@ async function handler(req: AuthedNextApiRequest, res: NextApiResponse) {
     return res.status(405).json({ error: "Method not allowed" });
   }
 
-  const { fullName, email, password, role, status, avatarUrl, studentId } = req.body as {
+  const { fullName, email, password, role, status, avatarUrl, studentId, archived } = req.body as {
     fullName?: string;
     email?: string;
     password?: string;
@@ -75,6 +79,7 @@ async function handler(req: AuthedNextApiRequest, res: NextApiResponse) {
     status?: "ACTIVE" | "INACTIVE";
     avatarUrl?: string;
     studentId?: string;
+    archived?: boolean;
   };
 
   let normalizedAvatarUrl: string | null | undefined;
@@ -111,9 +116,20 @@ async function handler(req: AuthedNextApiRequest, res: NextApiResponse) {
     fullName: fullName?.trim() || existingUser.fullName,
     email: normalizedEmail,
     role: nextRole,
-    status: status ?? existingUser.status,
+    status:
+      typeof archived === "boolean"
+        ? archived
+          ? "INACTIVE"
+          : "ACTIVE"
+        : status ?? existingUser.status,
     avatarUrl: normalizedAvatarUrl,
     studentId: normalizedStudentId,
+    archivedAt:
+      typeof archived === "boolean"
+        ? archived
+          ? existingUser.archivedAt ?? new Date()
+          : null
+        : existingUser.archivedAt,
     passwordHash: password?.trim() ? await bcrypt.hash(password, 10) : undefined,
   };
 

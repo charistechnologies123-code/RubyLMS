@@ -33,6 +33,7 @@ async function handler(req: AuthedNextApiRequest, res: NextApiResponse) {
       course: {
         include: {
           enrollments: true,
+          courseManagers: true,
         },
       },
       quizQuestions: {
@@ -54,8 +55,40 @@ async function handler(req: AuthedNextApiRequest, res: NextApiResponse) {
     return res.status(404).json({ error: "Quiz not found." });
   }
 
+  if (req.method === "DELETE") {
+    if (
+      !canManageCourse(
+        req.session,
+        [quiz.course.instructorId, quiz.course.createdById, ...quiz.course.courseManagers.map((manager) => manager.userId)].filter(Boolean) as string[],
+      )
+    ) {
+      return res.status(403).json({ error: "Forbidden" });
+    }
+
+    if (!quiz.archivedAt) {
+      return res.status(400).json({ error: "Archive this quiz first before deleting permanently." });
+    }
+
+    await prisma.quiz.delete({ where: { id: quizId } });
+
+    await createAuditLog({
+      actorId: req.session.userId,
+      action: "QUIZ_DELETED",
+      targetType: "Quiz",
+      targetId: quizId,
+      details: `Deleted quiz ${quiz.title}`,
+    });
+
+    return res.status(200).json({ success: true });
+  }
+
   if (req.method === "PATCH") {
-    if (!canManageCourse(req.session, quiz.course.instructorId)) {
+    if (
+      !canManageCourse(
+        req.session,
+        [quiz.course.instructorId, quiz.course.createdById, ...quiz.course.courseManagers.map((manager) => manager.userId)].filter(Boolean) as string[],
+      )
+    ) {
       return res.status(403).json({ error: "Forbidden" });
     }
 
@@ -65,6 +98,9 @@ async function handler(req: AuthedNextApiRequest, res: NextApiResponse) {
       instructions,
       timeLimitMinutes,
       maxAttempts,
+      status,
+      dueAt,
+      archived,
       questions,
       showScoreImmediately,
       shuffleQuestions,
@@ -75,40 +111,55 @@ async function handler(req: AuthedNextApiRequest, res: NextApiResponse) {
       instructions?: string;
       timeLimitMinutes?: string;
       maxAttempts?: string;
+      status?: "DRAFT" | "PUBLISHED";
+      dueAt?: string;
+      archived?: boolean;
       questions?: string;
       showScoreImmediately?: string;
       shuffleQuestions?: string;
       shuffleOptions?: string;
     };
 
-    if (!title || !timeLimitMinutes || !questions) {
-      return res.status(400).json({ error: "title, timeLimitMinutes, and questions are required." });
+    if (
+      typeof archived === "boolean" &&
+      !title &&
+      !timeLimitMinutes &&
+      !questions
+    ) {
+      const updatedQuiz = await prisma.quiz.update({
+        where: { id: quizId },
+        data: {
+          archivedAt: archived ? quiz.archivedAt ?? new Date() : null,
+        },
+      });
+
+      await createAuditLog({
+        actorId: req.session.userId,
+        action: archived ? "QUIZ_ARCHIVED" : "QUIZ_RESTORED",
+        targetType: "Quiz",
+        targetId: quizId,
+        details: `${archived ? "Archived" : "Restored"} quiz ${updatedQuiz.title}`,
+      });
+
+      return res.status(200).json({ quiz: updatedQuiz });
+    }
+
+    if (!title || !timeLimitMinutes) {
+      return res.status(400).json({ error: "title and timeLimitMinutes are required." });
+    }
+
+    if (typeof archived === "boolean" && req.session.role !== "ADMIN") {
+      return res.status(403).json({ error: "Only admins can archive or restore quizzes." });
     }
 
     const parsedQuestions = parseQuestions(questions);
 
-    if (!parsedQuestions?.length) {
+    if (typeof questions === "string" && !parsedQuestions?.length) {
       return res.status(400).json({ error: "At least one question is required." });
     }
 
     const updatedQuiz = await prisma.$transaction(async (tx) => {
-      await tx.quizAnswer.deleteMany({
-        where: {
-          quizQuestion: {
-            quizId,
-          },
-        },
-      });
-
-      await tx.quizAttempt.deleteMany({
-        where: { quizId },
-      });
-
-      await tx.quizQuestion.deleteMany({
-        where: { quizId },
-      });
-
-      return tx.quiz.update({
+      const savedQuiz = await tx.quiz.update({
         where: { id: quizId },
         data: {
           title,
@@ -116,32 +167,68 @@ async function handler(req: AuthedNextApiRequest, res: NextApiResponse) {
           instructions: instructions || null,
           timeLimitMinutes: Number(timeLimitMinutes),
           maxAttempts: maxAttempts ? Number(maxAttempts) : 1,
+          status: status ?? undefined,
+          dueAt: dueAt ? new Date(dueAt) : dueAt === "" ? null : undefined,
+          archivedAt:
+            typeof archived === "boolean"
+              ? archived
+                ? quiz.archivedAt ?? new Date()
+                : null
+              : undefined,
           showScoreImmediately: showScoreImmediately !== "false",
           shuffleQuestions: shuffleQuestions !== "false",
           shuffleOptions: shuffleOptions === "true",
-          quizQuestions: {
-            create: parsedQuestions.map((question, index) => ({
-              order: index + 1,
-              questionBank: {
-                create: {
-                  courseId: quiz.courseId,
-                  questionText: question.questionText,
-                  questionType: question.questionType,
-                  explanation: question.explanation || null,
-                  marks: question.marks ?? 1,
-                  options: {
-                    create: question.options.map((option, optionIndex) => ({
-                      optionText: option.optionText,
-                      isCorrect: option.isCorrect,
-                      order: optionIndex + 1,
-                    })),
-                  },
-                },
-              },
-            })),
-          },
         },
       });
+
+      if (typeof questions === "string") {
+        const nonNullQuestions = parsedQuestions ?? [];
+
+        await tx.quizAnswer.deleteMany({
+          where: {
+            quizQuestion: {
+              quizId,
+            },
+          },
+        });
+
+        await tx.quizAttempt.deleteMany({
+          where: { quizId },
+        });
+
+        await tx.quizQuestion.deleteMany({
+          where: { quizId },
+        });
+
+        for (const [index, question] of nonNullQuestions.entries()) {
+          const questionBank = await tx.questionBankItem.create({
+            data: {
+              courseId: quiz.courseId,
+              questionText: question.questionText,
+              questionType: question.questionType,
+              explanation: question.explanation || null,
+              marks: question.marks ?? 1,
+              options: {
+                create: question.options.map((option, optionIndex) => ({
+                  optionText: option.optionText,
+                  isCorrect: option.isCorrect,
+                  order: optionIndex + 1,
+                })),
+              },
+            },
+          });
+
+          await tx.quizQuestion.create({
+            data: {
+              quizId,
+              questionBankId: questionBank.id,
+              order: index + 1,
+            },
+          });
+        }
+      }
+
+      return savedQuiz;
     });
 
     await createAuditLog({

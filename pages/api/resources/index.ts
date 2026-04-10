@@ -2,6 +2,7 @@ import type { NextApiResponse } from "next";
 import { prisma } from "@/lib/prisma";
 import { createAuditLog } from "@/lib/audit";
 import { withApiAuth, type AuthedNextApiRequest } from "@/lib/api";
+import { normalizeFileInput } from "@/lib/media";
 import { canManageCourse } from "@/lib/permissions";
 
 async function handler(req: AuthedNextApiRequest, res: NextApiResponse) {
@@ -23,13 +24,31 @@ async function handler(req: AuthedNextApiRequest, res: NextApiResponse) {
     return res.status(400).json({ error: "courseId, title, and type are required." });
   }
 
-  const course = await prisma.course.findUnique({ where: { id: courseId } });
+  let normalizedFileUrl: string | null | undefined;
+
+  try {
+    normalizedFileUrl = normalizeFileInput(fileUrl, "Resource file");
+  } catch (error) {
+    return res.status(400).json({
+      error: error instanceof Error ? error.message : "Invalid resource file.",
+    });
+  }
+
+  const course = await prisma.course.findUnique({
+    where: { id: courseId },
+    include: { courseManagers: true },
+  });
 
   if (!course) {
     return res.status(404).json({ error: "Course not found." });
   }
 
-  if (!canManageCourse(req.session, course.instructorId)) {
+  if (
+    !canManageCourse(
+      req.session,
+      [course.instructorId, course.createdById, ...course.courseManagers.map((manager) => manager.userId)].filter(Boolean) as string[],
+    )
+  ) {
     return res.status(403).json({ error: "Forbidden" });
   }
 
@@ -40,7 +59,7 @@ async function handler(req: AuthedNextApiRequest, res: NextApiResponse) {
       lessonPageId: lessonPageId || null,
       title,
       type,
-      fileUrl: fileUrl || null,
+      fileUrl: normalizedFileUrl,
       externalUrl: externalUrl || null,
     },
   });

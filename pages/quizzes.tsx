@@ -1,13 +1,10 @@
 import type { GetServerSidePropsContext, InferGetServerSidePropsType } from "next";
 import Link from "next/link";
-import { useState } from "react";
 import DashboardLayout from "@/components/dashboard/DashboardLayout";
-import ApiForm from "@/components/ui/ApiForm";
 import Badge from "@/components/ui/Badge";
 import EmptyState from "@/components/ui/EmptyState";
-import FormField from "@/components/ui/FormField";
 import Panel from "@/components/ui/Panel";
-import QuizBuilderField from "@/components/ui/QuizBuilderField";
+import { getVisibleQuizWhere } from "@/lib/lms";
 import { requirePageAuth } from "@/lib/pageAuth";
 import { prisma } from "@/lib/prisma";
 import { serialize } from "@/lib/serialize";
@@ -34,24 +31,8 @@ type QuizAttemptView = {
 
 export async function getServerSideProps(ctx: GetServerSidePropsContext) {
   return requirePageAuth(ctx, ["ADMIN", "INSTRUCTOR", "STUDENT"], async (session) => {
-    const [courses, quizzes] = await Promise.all([
-      prisma.course.findMany({
-        where:
-          session.role === "STUDENT"
-            ? { enrollments: { some: { studentId: session.userId } } }
-            : session.role === "INSTRUCTOR"
-              ? { OR: [{ instructorId: session.userId }, { createdById: session.userId }] }
-              : {},
-        select: { id: true, title: true },
-        orderBy: { title: "asc" },
-      }),
-      prisma.quiz.findMany({
-        where:
-          session.role === "STUDENT"
-            ? { course: { enrollments: { some: { studentId: session.userId } } } }
-            : session.role === "INSTRUCTOR"
-              ? { course: { OR: [{ instructorId: session.userId }, { createdById: session.userId }] } }
-              : {},
+    const quizzes = await prisma.quiz.findMany({
+        where: getVisibleQuizWhere(session),
         include: {
           course: true,
           quizQuestions: {
@@ -67,14 +48,22 @@ export async function getServerSideProps(ctx: GetServerSidePropsContext) {
           attempts:
             session.role === "STUDENT"
               ? { where: { studentId: session.userId }, orderBy: { attemptNumber: "desc" } }
-              : false,
+              : {
+                  orderBy: [{ submittedAt: "desc" }, { startedAt: "desc" }],
+                  include: {
+                    student: {
+                      select: {
+                        fullName: true,
+                        studentId: true,
+                      },
+                    },
+                  },
+                },
         },
         orderBy: { createdAt: "desc" },
-      }),
-    ]);
+      });
 
     return {
-      courses: serialize(courses),
       quizzes: serialize(quizzes),
     };
   });
@@ -82,11 +71,8 @@ export async function getServerSideProps(ctx: GetServerSidePropsContext) {
 
 export default function QuizzesPage({
   session,
-  courses,
   quizzes,
 }: InferGetServerSidePropsType<typeof getServerSideProps>) {
-  const canManage = session.role !== "STUDENT";
-  const [showCreateQuiz, setShowCreateQuiz] = useState(false);
   const studentQuizzes = quizzes as Array<
     (typeof quizzes)[number] & {
       quizQuestions: QuizQuestionView[];
@@ -98,66 +84,8 @@ export default function QuizzesPage({
       role={session.role}
       session={session}
       title="Quizzes"
-      description="Manage timed assessments with configurable attempts and student submission tracking."
+      description={session.role === "STUDENT" ? "Open available quizzes and review your attempt history." : "Review quizzes and submitted attempt scores across the LMS."}
     >
-      {canManage && (
-        <Panel
-          title="Quiz Builder"
-          subtitle="Open the builder only when you are ready to create a quiz."
-          className="mb-6"
-        >
-          <div className="space-y-4">
-            <button
-              type="button"
-              onClick={() => setShowCreateQuiz((current) => !current)}
-              className={`rounded-2xl px-4 py-3 text-sm font-semibold transition ${
-                showCreateQuiz
-                  ? "bg-[linear-gradient(135deg,#6b00ff,#8c3cff)] text-white"
-                  : "border border-[#e8ddff] bg-white text-[#6b00ff]"
-              }`}
-            >
-              {showCreateQuiz ? "Close Quiz Builder" : "Create Quiz"}
-            </button>
-
-            {showCreateQuiz ? (
-              <div className="rounded-[24px] border border-[#e8ddff] bg-[#fcfaff] p-5">
-                <ApiForm
-                  action="/api/quizzes"
-                  submitLabel="Create quiz"
-                  successMessage="Quiz created."
-                  className="grid gap-4 md:grid-cols-2"
-                  onSuccess={() => setShowCreateQuiz(false)}
-                >
-                  <FormField
-                    label="Course"
-                    name="courseId"
-                    as="select"
-                    options={courses.map((course) => ({ label: course.title, value: course.id }))}
-                    required
-                  />
-                  <FormField label="Title" name="title" required />
-                  <FormField
-                    label="Time limit (minutes)"
-                    name="timeLimitMinutes"
-                    type="number"
-                    defaultValue="20"
-                    required
-                  />
-                  <FormField label="Max attempts" name="maxAttempts" type="number" defaultValue="1" />
-                  <div className="md:col-span-2">
-                    <FormField label="Description" name="description" as="textarea" />
-                  </div>
-                  <div className="md:col-span-2">
-                    <FormField label="Instructions" name="instructions" as="textarea" />
-                  </div>
-                  <QuizBuilderField />
-                </ApiForm>
-              </div>
-            ) : null}
-          </div>
-        </Panel>
-      )}
-
       {!quizzes.length ? (
         <EmptyState
           title="No quizzes yet"
@@ -223,28 +151,31 @@ export default function QuizzesPage({
                       href={`/quizzes/${quiz.id}`}
                       className="inline-flex rounded-2xl border border-[#e8ddff] bg-[#faf7ff] px-4 py-3 text-sm font-semibold text-[#6b00ff]"
                     >
-                      Open quiz workspace
+                      Open quiz
                     </Link>
-                    {quiz.quizQuestions.map((question, index) => (
-                      <div
-                        key={question.id}
-                        className="rounded-[22px] border border-[#eee4ff] bg-white p-4"
-                      >
-                        <p className="font-semibold text-slate-950">
-                          {index + 1}. {question.questionBank.questionText}
-                        </p>
-                        <div className="mt-3 grid gap-2">
-                          {question.questionBank.options.map((option) => (
-                            <div
-                              key={option.id}
-                              className="rounded-2xl bg-[#faf7ff] px-4 py-3 text-sm text-slate-700"
-                            >
-                              {option.optionText} {option.isCorrect ? " - Correct" : ""}
-                            </div>
-                          ))}
+                    {!quiz.attempts.length ? (
+                      <p className="text-sm text-slate-600">No attempts recorded yet.</p>
+                    ) : (
+                      quiz.attempts.map((attempt) => (
+                        <div key={attempt.id} className="rounded-[22px] border border-[#eee4ff] bg-white p-4">
+                          <div className="flex flex-wrap items-center gap-2">
+                            <Badge tone="slate">Attempt {attempt.attemptNumber}</Badge>
+                            <Badge tone={attempt.isSubmitted ? "green" : "purple"}>
+                              {attempt.isSubmitted ? "Submitted" : "In progress"}
+                            </Badge>
+                            <Badge tone="purple">
+                              {typeof attempt.score === "number" ? `${attempt.score} points` : "Awaiting score"}
+                            </Badge>
+                          </div>
+                          {"student" in attempt ? (
+                            <p className="mt-3 text-sm text-slate-700">
+                              {attempt.student.fullName}
+                              {attempt.student.studentId ? ` (${attempt.student.studentId})` : ""}
+                            </p>
+                          ) : null}
                         </div>
-                      </div>
-                    ))}
+                      ))
+                    )}
                   </div>
                 )}
               </Panel>

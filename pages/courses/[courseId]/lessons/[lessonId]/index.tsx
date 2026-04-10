@@ -2,14 +2,17 @@ import type { GetServerSidePropsContext, GetServerSidePropsResult } from "next";
 import Link from "next/link";
 import { useState } from "react";
 import DashboardLayout from "@/components/dashboard/DashboardLayout";
+import ApiActionButton from "@/components/ui/ApiActionButton";
 import ApiForm from "@/components/ui/ApiForm";
 import Badge from "@/components/ui/Badge";
 import EmptyState from "@/components/ui/EmptyState";
+import FileUploadField from "@/components/ui/FileUploadField";
 import FormField from "@/components/ui/FormField";
 import ImageUploadField from "@/components/ui/ImageUploadField";
 import Panel from "@/components/ui/Panel";
 import QuizBuilderField from "@/components/ui/QuizBuilderField";
 import RichTextEditorField from "@/components/ui/RichTextEditorField";
+import { getManagedCourseWhere } from "@/lib/courseManagers";
 import { assertRoleAccess, getDefaultRouteForRole, getSessionFromPageContext } from "@/lib/auth";
 import { canManageCourse } from "@/lib/permissions";
 import { prisma } from "@/lib/prisma";
@@ -132,17 +135,28 @@ export async function getServerSideProps(
     where: {
       id: courseId,
       ...(session.role === "STUDENT"
-        ? { enrollments: { some: { studentId: session.userId } } }
+        ? { status: "PUBLISHED", enrollments: { some: { studentId: session.userId } } }
         : session.role === "INSTRUCTOR"
-          ? { OR: [{ instructorId: session.userId }, { createdById: session.userId }] }
+          ? getManagedCourseWhere(session)
           : {}),
     },
     include: {
       instructor: {
         select: { id: true, fullName: true },
       },
+      courseManagers: {
+        select: {
+          user: {
+            select: {
+              id: true,
+              fullName: true,
+            },
+          },
+        },
+      },
       lessons: {
         orderBy: { order: "asc" },
+        where: session.role === "STUDENT" ? { status: "PUBLISHED" } : undefined,
         select: {
           id: true,
           title: true,
@@ -171,6 +185,7 @@ export async function getServerSideProps(
     where: {
       id: lessonId,
       courseId,
+      ...(session.role === "STUDENT" ? { status: "PUBLISHED" } : {}),
     },
     include: {
       pages: {
@@ -185,9 +200,14 @@ export async function getServerSideProps(
         orderBy: { createdAt: "desc" },
       },
       assignments: {
+        where: session.role === "STUDENT" ? { status: "PUBLISHED" } : undefined,
         orderBy: [{ dueAt: "asc" }, { createdAt: "desc" }],
       },
       quizzes: {
+        where:
+          session.role === "STUDENT"
+            ? { status: "PUBLISHED", archivedAt: null }
+            : { archivedAt: null },
         orderBy: { createdAt: "desc" },
       },
       course: {
@@ -246,7 +266,10 @@ export default function LessonPage({
   course,
   lesson,
 }: LessonPageProps) {
-  const canManage = canManageCourse(session, course.instructor?.id);
+  const canManage = canManageCourse(
+    session,
+    [course.instructor?.id, ...(course as any).courseManagers?.map((manager: any) => manager.user.id) ?? []].filter(Boolean) as string[],
+  );
   const lessonIndex = course.lessons.findIndex((currentLesson) => currentLesson.id === lesson.id);
   const previousLesson = lessonIndex > 0 ? course.lessons[lessonIndex - 1] : null;
   const nextLesson = lessonIndex >= 0 && lessonIndex < course.lessons.length - 1 ? course.lessons[lessonIndex + 1] : null;
@@ -260,8 +283,8 @@ export default function LessonPage({
     <DashboardLayout
       role={session.role}
       session={session}
-      title={`Module ${lesson.order}: ${lesson.title}`}
-      description={`Standalone module page inside ${course.title}.`}
+      title={lesson.title}
+      description={`Module inside ${course.title}.`}
     >
       <Panel className="mb-6">
         <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
@@ -288,7 +311,7 @@ export default function LessonPage({
                 href={`/courses/${course.id}/lessons/${previousLesson.id}`}
                 className="rounded-2xl border border-[#e8ddff] bg-[#faf7ff] px-4 py-3 text-sm font-semibold text-[#6b00ff]"
               >
-                Previous lesson
+                Previous module
               </Link>
             ) : null}
             {nextLesson ? (
@@ -296,14 +319,61 @@ export default function LessonPage({
                 href={`/courses/${course.id}/lessons/${nextLesson.id}`}
                 className="rounded-2xl bg-[linear-gradient(135deg,#6b00ff,#8c3cff)] px-4 py-3 text-sm font-semibold text-white"
               >
-                Next lesson
+                Next module
               </Link>
+            ) : null}
+            {canManage ? (
+              <ApiActionButton
+                action={`/api/lessons/${lesson.id}`}
+                method="DELETE"
+                successMessage="Module deleted."
+                label="Delete module"
+                pendingLabel="Deleting..."
+                tone="danger"
+                confirmMessage={`Delete module "${lesson.title}"? This action cannot be undone.`}
+              />
             ) : null}
           </div>
         </div>
       </Panel>
 
       <section className="space-y-6">
+        {canManage ? (
+          <Panel
+            title="Module Settings"
+            subtitle="Edit the module name, description, and publish state."
+          >
+            <ApiForm
+              action={`/api/lessons/${lesson.id}`}
+              method="PATCH"
+              submitLabel="Save module"
+              successMessage="Module updated."
+              resetOnSuccess={false}
+              className="grid gap-4"
+            >
+              <FormField label="Module name" name="title" defaultValue={lesson.title} required />
+              <FormField
+                label="Status"
+                name="status"
+                as="select"
+                defaultValue={lesson.status}
+                options={[
+                  { label: "Draft", value: "DRAFT" },
+                  { label: "Published", value: "PUBLISHED" },
+                ]}
+              />
+              <FormField
+                label="Description"
+                name="content"
+                as="textarea"
+                rows={6}
+                defaultValue={lesson.content}
+                required
+              />
+            </ApiForm>
+          </Panel>
+        ) : null}
+
         {canManage ? (
           <Panel
             title="Module Builder"
@@ -402,6 +472,17 @@ export default function LessonPage({
                     <FormField label="Title" name="title" required />
                     <FormField label="Time limit (minutes)" name="timeLimitMinutes" type="number" defaultValue="20" required />
                     <FormField label="Max attempts" name="maxAttempts" type="number" defaultValue="1" />
+                    <FormField
+                      label="Status"
+                      name="status"
+                      as="select"
+                      defaultValue="DRAFT"
+                      options={[
+                        { label: "Draft", value: "DRAFT" },
+                        { label: "Published", value: "PUBLISHED" },
+                      ]}
+                    />
+                    <FormField label="Due date" name="dueAt" type="datetime-local" />
                     <FormField label="Description" name="description" as="textarea" />
                     <FormField label="Instructions" name="instructions" as="textarea" />
                     <QuizBuilderField />
@@ -432,9 +513,24 @@ export default function LessonPage({
                         { label: "Text", value: "TEXT" },
                       ]}
                     />
+                    <FormField
+                      label="Status"
+                      name="status"
+                      as="select"
+                      defaultValue="DRAFT"
+                      options={[
+                        { label: "Draft", value: "DRAFT" },
+                        { label: "Published", value: "PUBLISHED" },
+                      ]}
+                    />
                     <FormField label="Due date" name="dueAt" type="datetime-local" />
                     <FormField label="Description" name="description" as="textarea" required />
                     <FormField label="Instructions" name="instructions" as="textarea" />
+                    <FileUploadField
+                      label="Assignment attachment"
+                      name="attachmentUrl"
+                      helperText="Upload a PDF, DOC, DOCX, TXT, CSV, or image."
+                    />
                   </ApiForm>
                 </div>
               ) : null}
@@ -466,7 +562,11 @@ export default function LessonPage({
                         { label: "Other", value: "OTHER" },
                       ]}
                     />
-                    <FormField label="File URL" name="fileUrl" placeholder="https://..." />
+                    <FileUploadField
+                      label="Resource file"
+                      name="fileUrl"
+                      helperText="Upload a PDF, DOC, DOCX, TXT, CSV, or image."
+                    />
                     <FormField label="External URL" name="externalUrl" placeholder="https://..." />
                   </ApiForm>
                 </div>
@@ -483,7 +583,7 @@ export default function LessonPage({
                   <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
                     <div>
                       <div className="flex flex-wrap items-center gap-2">
-                        <Badge tone="purple">Page {page.order}</Badge>
+                        <Badge tone="purple">Page</Badge>
                         <Badge tone="slate">{page.resources.length} resources</Badge>
                       </div>
                       <p className="mt-3 font-semibold text-slate-950">{page.title}</p>
@@ -550,7 +650,7 @@ export default function LessonPage({
                           <p className="mt-3 font-semibold text-slate-950">{quiz.title}</p>
                           {quiz.description ? <p className="mt-2 text-sm text-slate-600">{quiz.description}</p> : null}
                           <Link
-                            href={`/quizzes/${quiz.id}`}
+                            href={`/quizzes/${quiz.id}?mode=manage`}
                             className="mt-4 inline-flex rounded-2xl border border-[#e8ddff] bg-[#faf7ff] px-4 py-3 text-sm font-semibold text-[#6b00ff]"
                           >
                             Open quiz

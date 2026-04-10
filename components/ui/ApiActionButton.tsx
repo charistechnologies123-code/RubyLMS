@@ -3,6 +3,7 @@
 import { useRouter } from "next/router";
 import { useState } from "react";
 import toast from "react-hot-toast";
+import { useConfirmDialog } from "@/components/ui/ConfirmDialogProvider";
 
 type ApiActionButtonProps = {
   action: string;
@@ -28,6 +29,7 @@ export default function ApiActionButton({
   tone = "default",
 }: ApiActionButtonProps) {
   const router = useRouter();
+  const { confirm } = useConfirmDialog();
   const [loading, setLoading] = useState(false);
 
   async function handleAction() {
@@ -35,8 +37,17 @@ export default function ApiActionButton({
       return;
     }
 
-    if (confirmMessage && !window.confirm(confirmMessage)) {
-      return;
+    if (confirmMessage) {
+      const confirmed = await confirm({
+        title: tone === "danger" ? "Confirm deletion" : "Confirm action",
+        message: confirmMessage,
+        confirmLabel: tone === "danger" ? "Yes, continue" : "Continue",
+        tone: tone === "danger" ? "danger" : "default",
+      });
+
+      if (!confirmed) {
+        return;
+      }
     }
 
     setLoading(true);

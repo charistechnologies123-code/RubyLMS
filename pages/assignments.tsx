@@ -4,9 +4,11 @@ import DashboardLayout from "@/components/dashboard/DashboardLayout";
 import ApiForm from "@/components/ui/ApiForm";
 import Badge from "@/components/ui/Badge";
 import EmptyState from "@/components/ui/EmptyState";
+import FileUploadField from "@/components/ui/FileUploadField";
 import FormField from "@/components/ui/FormField";
 import Panel from "@/components/ui/Panel";
 import { formatShortDate } from "@/lib/format";
+import { getVisibleAssignmentWhere, getVisibleCourseWhere } from "@/lib/lms";
 import { requirePageAuth } from "@/lib/pageAuth";
 import { prisma } from "@/lib/prisma";
 import { serialize } from "@/lib/serialize";
@@ -15,16 +17,7 @@ export async function getServerSideProps(ctx: GetServerSidePropsContext) {
   return requirePageAuth(ctx, ["ADMIN", "INSTRUCTOR", "STUDENT"], async (session) => {
     const [courses, assignments] = await Promise.all([
       prisma.course.findMany({
-        where:
-          session.role === "STUDENT"
-            ? {
-                enrollments: { some: { studentId: session.userId } },
-              }
-            : session.role === "INSTRUCTOR"
-              ? {
-                  OR: [{ instructorId: session.userId }, { createdById: session.userId }],
-                }
-              : {},
+        where: getVisibleCourseWhere(session),
         select: {
           id: true,
           title: true,
@@ -32,20 +25,7 @@ export async function getServerSideProps(ctx: GetServerSidePropsContext) {
         orderBy: { title: "asc" },
       }),
       prisma.assignment.findMany({
-        where:
-          session.role === "STUDENT"
-            ? {
-                course: {
-                  enrollments: { some: { studentId: session.userId } },
-                },
-              }
-            : session.role === "INSTRUCTOR"
-              ? {
-                  course: {
-                    OR: [{ instructorId: session.userId }, { createdById: session.userId }],
-                  },
-                }
-              : {},
+        where: getVisibleAssignmentWhere(session),
         include: {
           course: true,
           submissions:
@@ -150,6 +130,16 @@ export default function AssignmentsPage({
                       { label: "Text", value: "TEXT" },
                     ]}
                   />
+                  <FormField
+                    label="Status"
+                    name="status"
+                    as="select"
+                    defaultValue="DRAFT"
+                    options={[
+                      { label: "Draft", value: "DRAFT" },
+                      { label: "Published", value: "PUBLISHED" },
+                    ]}
+                  />
                   <FormField label="Due date" name="dueAt" type="datetime-local" />
                   <div className="md:col-span-2">
                     <FormField label="Description" name="description" as="textarea" required />
@@ -158,7 +148,11 @@ export default function AssignmentsPage({
                     <FormField label="Instructions" name="instructions" as="textarea" />
                   </div>
                   <div className="md:col-span-2">
-                    <FormField label="Attachment URL" name="attachmentUrl" placeholder="https://..." />
+                    <FileUploadField
+                      label="Assignment attachment"
+                      name="attachmentUrl"
+                      helperText="Upload a PDF, DOC, DOCX, TXT, CSV, or image."
+                    />
                   </div>
                 </ApiForm>
               </div>
@@ -180,6 +174,7 @@ export default function AssignmentsPage({
               <div className="flex flex-wrap items-center gap-2">
                 <Badge tone="purple">{assignment.course.title}</Badge>
                 <Badge tone="slate">{assignment.submissionType}</Badge>
+                <Badge tone={assignment.status === "PUBLISHED" ? "green" : "purple"}>{assignment.status}</Badge>
                 <Badge tone="red">Due {formatShortDate(assignment.dueAt)}</Badge>
               </div>
 
@@ -220,7 +215,11 @@ export default function AssignmentsPage({
                           onSuccess={() => setActiveSubmissionAssignmentId(null)}
                         >
                           <input type="hidden" name="assignmentId" value={assignment.id} />
-                          <FormField label="File URL" name="fileUrl" placeholder="https://..." />
+                          <FileUploadField
+                            label="Submission file"
+                            name="fileUrl"
+                            helperText="Upload your submission file or leave this empty if you are submitting by link or text."
+                          />
                           <FormField label="Link URL" name="linkUrl" placeholder="https://..." />
                           <FormField label="Text submission" name="textSubmission" as="textarea" />
                         </ApiForm>

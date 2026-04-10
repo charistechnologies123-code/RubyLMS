@@ -12,6 +12,7 @@ type ImageUploadFieldProps = {
   emptyLabel?: string;
   maxFileSizeKb?: number;
   previewClassName?: string;
+  onValueChange?: (value: string) => void;
 };
 
 export default function ImageUploadField({
@@ -22,6 +23,7 @@ export default function ImageUploadField({
   emptyLabel = "No image",
   maxFileSizeKb = 750,
   previewClassName = "h-20 w-20 rounded-[24px]",
+  onValueChange,
 }: ImageUploadFieldProps) {
   const inputId = useId();
   const [value, setValue] = useState(defaultValue ?? "");
@@ -47,6 +49,7 @@ export default function ImageUploadField({
 
     const nextValue = await readFileAsDataUrl(file);
     setValue(nextValue);
+    onValueChange?.(nextValue);
     event.target.value = "";
   }
 
@@ -57,7 +60,10 @@ export default function ImageUploadField({
         {value ? (
           <button
             type="button"
-            onClick={() => setValue("")}
+            onClick={() => {
+              setValue("");
+              onValueChange?.("");
+            }}
             className="text-xs font-semibold uppercase tracking-[0.16em] text-[#6b00ff]"
           >
             Remove

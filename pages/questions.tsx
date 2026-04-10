@@ -7,6 +7,7 @@ import Badge from "@/components/ui/Badge";
 import EmptyState from "@/components/ui/EmptyState";
 import FormField from "@/components/ui/FormField";
 import Panel from "@/components/ui/Panel";
+import { getManagedCourseWhere } from "@/lib/courseManagers";
 import { requirePageAuth } from "@/lib/pageAuth";
 import { prisma } from "@/lib/prisma";
 import { serialize } from "@/lib/serialize";
@@ -17,9 +18,9 @@ export async function getServerSideProps(ctx: GetServerSidePropsContext) {
       prisma.course.findMany({
         where:
           session.role === "STUDENT"
-            ? { enrollments: { some: { studentId: session.userId } } }
+            ? { status: "PUBLISHED", enrollments: { some: { studentId: session.userId } } }
             : session.role === "INSTRUCTOR"
-              ? { OR: [{ instructorId: session.userId }, { createdById: session.userId }] }
+              ? getManagedCourseWhere(session)
               : {},
         select: { id: true, title: true },
         orderBy: { title: "asc" },
@@ -27,9 +28,9 @@ export async function getServerSideProps(ctx: GetServerSidePropsContext) {
       prisma.courseQuestion.findMany({
         where:
           session.role === "STUDENT"
-            ? { course: { enrollments: { some: { studentId: session.userId } } } }
+            ? { course: { status: "PUBLISHED", enrollments: { some: { studentId: session.userId } } } }
             : session.role === "INSTRUCTOR"
-              ? { course: { OR: [{ instructorId: session.userId }, { createdById: session.userId }] } }
+              ? { course: getManagedCourseWhere(session) }
               : {},
         include: {
           course: true,
@@ -67,7 +68,7 @@ export default function QuestionsPage({
       title="Course Q&A"
       description="Support learning conversations with course-linked questions and instructor/admin responses."
     >
-      {session.role === "STUDENT" && (
+      {session.role === "STUDENT" ? (
         <Panel title="Question Builder" className="mb-6">
           <div className="space-y-4">
             <button
@@ -107,7 +108,7 @@ export default function QuestionsPage({
             ) : null}
           </div>
         </Panel>
-      )}
+      ) : null}
 
       <Panel title="Questions Feed">
         {!questions.length ? (
@@ -140,7 +141,7 @@ export default function QuestionsPage({
                   ))}
                 </div>
 
-                {session.role !== "STUDENT" && (
+                {session.role !== "STUDENT" ? (
                   <div className="mt-4 space-y-3">
                     <div className="flex flex-wrap gap-3">
                       <button
@@ -184,7 +185,7 @@ export default function QuestionsPage({
                       </div>
                     ) : null}
                   </div>
-                )}
+                ) : null}
               </article>
             ))}
           </div>

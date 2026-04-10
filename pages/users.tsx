@@ -4,7 +4,6 @@ import ApiActionButton from "@/components/ui/ApiActionButton";
 import ApiForm from "@/components/ui/ApiForm";
 import AvatarUploadField from "@/components/ui/AvatarUploadField";
 import Badge from "@/components/ui/Badge";
-import DeleteActionButton from "@/components/ui/DeleteActionButton";
 import FormField from "@/components/ui/FormField";
 import Panel from "@/components/ui/Panel";
 import { formatShortDate } from "@/lib/format";
@@ -15,6 +14,7 @@ import { serialize } from "@/lib/serialize";
 export async function getServerSideProps(ctx: GetServerSidePropsContext) {
   return requirePageAuth(ctx, ["ADMIN"], async () => {
     const users = await prisma.user.findMany({
+      where: { archivedAt: null },
       orderBy: { createdAt: "desc" },
       select: {
         id: true,
@@ -24,6 +24,7 @@ export async function getServerSideProps(ctx: GetServerSidePropsContext) {
         status: true,
         avatarUrl: true,
         studentId: true,
+        archivedAt: true,
         lastLoginAt: true,
         createdAt: true,
       },
@@ -123,7 +124,8 @@ export default function UsersPage({
                     <p className="font-semibold text-slate-950">{user.fullName}</p>
                     <p className="text-sm text-slate-600">{user.email}</p>
                     <p className="mt-1 text-xs uppercase tracking-[0.18em] text-slate-500">
-                      Student ID: {user.studentId ?? "N/A"} | Last login: {formatShortDate(user.lastLoginAt)}
+                      {user.role === "STUDENT" ? `Student ID: ${user.studentId ?? "N/A"} | ` : ""}
+                      Last login: {formatShortDate(user.lastLoginAt)}
                     </p>
                   </div>
                   <div className="flex flex-wrap items-center gap-2">
@@ -213,12 +215,14 @@ export default function UsersPage({
                         { label: "Inactive", value: "INACTIVE" },
                       ]}
                     />
-                    <FormField
-                      label="Student ID"
-                      name="studentId"
-                      defaultValue={user.studentId ?? ""}
-                      placeholder="Only used for student accounts"
-                    />
+                    {user.role === "STUDENT" ? (
+                      <FormField
+                        label="Student ID"
+                        name="studentId"
+                        defaultValue={user.studentId ?? ""}
+                        placeholder="Only used for student accounts"
+                      />
+                    ) : null}
                     <FormField
                       label="New password"
                       name="password"
@@ -240,29 +244,20 @@ export default function UsersPage({
                         <ApiActionButton
                           action={`/api/users/${user.id}`}
                           method="PATCH"
-                          payload={{ status: user.status === "ACTIVE" ? "INACTIVE" : "ACTIVE" }}
-                          successMessage={user.status === "ACTIVE" ? "User archived." : "User restored."}
-                          label={user.status === "ACTIVE" ? "Archive user" : "Restore user"}
-                          pendingLabel={user.status === "ACTIVE" ? "Archiving..." : "Restoring..."}
+                          payload={{ archived: true }}
+                          successMessage="User archived."
+                          label="Archive user"
+                          pendingLabel="Archiving..."
                           disabled={user.id === session.userId}
-                          tone={user.status === "ACTIVE" ? "default" : "success"}
+                          tone="default"
                         />
                       </div>
                     </div>
 
-                    <p className="text-sm font-semibold text-slate-900">Remove User</p>
+                    <p className="text-sm font-semibold text-slate-900">Permanent delete</p>
                     <p className="mt-1 text-sm text-slate-600">
-                      Deleting a user permanently removes their account when no owned teaching records are blocking it.
+                      Permanent deletion is only available from Admin Archives after a user has been archived.
                     </p>
-                    <div className="mt-3">
-                      <DeleteActionButton
-                        action={`/api/users/${user.id}`}
-                        successMessage="User deleted."
-                        confirmMessage={`Delete ${user.fullName}? This action cannot be undone.`}
-                        disabled={user.id === session.userId}
-                        label={user.id === session.userId ? "Current admin account" : "Delete user"}
-                      />
-                    </div>
                   </div>
                 </div>
               </div>

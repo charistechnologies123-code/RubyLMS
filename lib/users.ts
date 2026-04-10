@@ -18,6 +18,7 @@ export const userSummarySelect = {
   status: true,
   avatarUrl: true,
   studentId: true,
+  archivedAt: true,
   lastLoginAt: true,
   createdAt: true,
 } satisfies Prisma.UserSelect;

@@ -1,6 +1,7 @@
 import type { NextApiResponse } from "next";
 import { prisma } from "@/lib/prisma";
 import { notifyUsers } from "@/lib/notifications";
+import { canStudentSubmitBeforeDueDate } from "@/lib/lms";
 import { withApiAuth, type AuthedNextApiRequest } from "@/lib/api";
 
 async function handler(req: AuthedNextApiRequest, res: NextApiResponse) {
@@ -42,6 +43,10 @@ async function handler(req: AuthedNextApiRequest, res: NextApiResponse) {
     return res.status(404).json({ error: "Quiz not found." });
   }
 
+  if (!canStudentSubmitBeforeDueDate(quiz.dueAt)) {
+    return res.status(400).json({ error: "The due date for this quiz has passed." });
+  }
+
   const attempt =
     attemptId
       ? await prisma.quizAttempt.findFirst({
@@ -59,10 +64,6 @@ async function handler(req: AuthedNextApiRequest, res: NextApiResponse) {
 
   if (attempt.isSubmitted) {
     return res.status(400).json({ error: "This attempt was already submitted." });
-  }
-
-  if (new Date() > attempt.expiresAt) {
-    return res.status(400).json({ error: "Time is up for this attempt." });
   }
 
   const score = quiz.quizQuestions.reduce((total, question) => {

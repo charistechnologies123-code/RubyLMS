@@ -1,6 +1,7 @@
 import type { NextApiResponse } from "next";
 import { prisma } from "@/lib/prisma";
 import { notifyUsers } from "@/lib/notifications";
+import { normalizeFileInput } from "@/lib/media";
 import { withApiAuth, type AuthedNextApiRequest } from "@/lib/api";
 
 async function handler(req: AuthedNextApiRequest, res: NextApiResponse) {
@@ -23,6 +24,16 @@ async function handler(req: AuthedNextApiRequest, res: NextApiResponse) {
     return res.status(400).json({ error: "assignmentId is required." });
   }
 
+  let normalizedFileUrl: string | null | undefined;
+
+  try {
+    normalizedFileUrl = normalizeFileInput(fileUrl, "Submission file");
+  } catch (error) {
+    return res.status(400).json({
+      error: error instanceof Error ? error.message : "Invalid submission file.",
+    });
+  }
+
   const assignment = await prisma.assignment.findUnique({
     where: { id: assignmentId },
     include: { course: true },
@@ -30,6 +41,14 @@ async function handler(req: AuthedNextApiRequest, res: NextApiResponse) {
 
   if (!assignment) {
     return res.status(404).json({ error: "Assignment not found." });
+  }
+
+  if (assignment.status !== "PUBLISHED") {
+    return res.status(400).json({ error: "This assignment is not available for students yet." });
+  }
+
+  if (assignment.dueAt && assignment.dueAt.getTime() < Date.now()) {
+    return res.status(400).json({ error: "The due date for this assignment has passed." });
   }
 
   const submission = await prisma.assignmentSubmission.upsert({
@@ -40,7 +59,7 @@ async function handler(req: AuthedNextApiRequest, res: NextApiResponse) {
       },
     },
     update: {
-      fileUrl: fileUrl || null,
+      fileUrl: normalizedFileUrl,
       linkUrl: linkUrl || null,
       textSubmission: textSubmission || null,
       submittedAt: new Date(),
@@ -48,7 +67,7 @@ async function handler(req: AuthedNextApiRequest, res: NextApiResponse) {
     create: {
       assignmentId,
       studentId: req.session.userId,
-      fileUrl: fileUrl || null,
+      fileUrl: normalizedFileUrl,
       linkUrl: linkUrl || null,
       textSubmission: textSubmission || null,
     },

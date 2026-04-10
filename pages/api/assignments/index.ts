@@ -3,31 +3,14 @@ import { prisma } from "@/lib/prisma";
 import { createAuditLog } from "@/lib/audit";
 import { notifyUsers } from "@/lib/notifications";
 import { withApiAuth, type AuthedNextApiRequest } from "@/lib/api";
+import { getVisibleAssignmentWhere } from "@/lib/lms";
+import { normalizeFileInput } from "@/lib/media";
 import { canManageCourse } from "@/lib/permissions";
 
 async function handler(req: AuthedNextApiRequest, res: NextApiResponse) {
   if (req.method === "GET") {
-    const where =
-      req.session.role === "STUDENT"
-        ? {
-            course: {
-              enrollments: {
-                some: {
-                  studentId: req.session.userId,
-                },
-              },
-            },
-          }
-        : req.session.role === "INSTRUCTOR"
-          ? {
-              course: {
-                OR: [{ instructorId: req.session.userId }, { createdById: req.session.userId }],
-              },
-            }
-          : {};
-
     const assignments = await prisma.assignment.findMany({
-      where,
+      where: getVisibleAssignmentWhere(req.session),
       orderBy: [{ dueAt: "asc" }, { createdAt: "desc" }],
       include: {
         course: true,
@@ -49,7 +32,7 @@ async function handler(req: AuthedNextApiRequest, res: NextApiResponse) {
   }
 
   if (req.method === "POST") {
-    const { courseId, lessonId, title, description, instructions, attachmentUrl, dueAt, submissionType } =
+    const { courseId, lessonId, title, description, instructions, attachmentUrl, dueAt, submissionType, status } =
       req.body as {
         courseId?: string;
         lessonId?: string;
@@ -59,22 +42,38 @@ async function handler(req: AuthedNextApiRequest, res: NextApiResponse) {
         attachmentUrl?: string;
         dueAt?: string;
         submissionType?: "FILE" | "LINK" | "TEXT";
+        status?: "DRAFT" | "PUBLISHED";
       };
 
     if (!courseId || !title || !description) {
       return res.status(400).json({ error: "courseId, title, and description are required." });
     }
 
+    let normalizedAttachmentUrl: string | null | undefined;
+
+    try {
+      normalizedAttachmentUrl = normalizeFileInput(attachmentUrl, "Assignment attachment");
+    } catch (error) {
+      return res.status(400).json({
+        error: error instanceof Error ? error.message : "Invalid assignment attachment.",
+      });
+    }
+
     const course = await prisma.course.findUnique({
       where: { id: courseId },
-      include: { enrollments: true },
+      include: { enrollments: true, courseManagers: true },
     });
 
     if (!course) {
       return res.status(404).json({ error: "Course not found." });
     }
 
-    if (!canManageCourse(req.session, course.instructorId)) {
+    if (
+      !canManageCourse(
+        req.session,
+        [course.instructorId, course.createdById, ...course.courseManagers.map((manager) => manager.userId)].filter(Boolean) as string[],
+      )
+    ) {
       return res.status(403).json({ error: "Forbidden" });
     }
 
@@ -85,18 +84,21 @@ async function handler(req: AuthedNextApiRequest, res: NextApiResponse) {
         title,
         description,
         instructions: instructions || null,
-        attachmentUrl: attachmentUrl || null,
+        attachmentUrl: normalizedAttachmentUrl,
+        status: status ?? "DRAFT",
         dueAt: dueAt ? new Date(dueAt) : null,
         submissionType: submissionType ?? "FILE",
         createdById: req.session.userId,
       },
     });
 
-    await notifyUsers(
-      course.enrollments.map((enrollment) => enrollment.studentId),
-      "New assignment published",
-      `${assignment.title} was added to ${course.title}.`,
-    );
+    if (assignment.status === "PUBLISHED") {
+      await notifyUsers(
+        course.enrollments.map((enrollment) => enrollment.studentId),
+        "New assignment published",
+        `${assignment.title} was added to ${course.title}.`,
+      );
+    }
 
     await createAuditLog({
       actorId: req.session.userId,

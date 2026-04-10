@@ -49,6 +49,11 @@ enum QuizStatus {
   PUBLISHED
 }
 
+enum AssignmentStatus {
+  DRAFT
+  PUBLISHED
+}
+
 enum QuestionType {
   SINGLE_CHOICE
   MULTIPLE_CHOICE
@@ -61,6 +66,19 @@ enum DifficultyLevel {
   HARD
 }
 
+enum GradebookSourceType {
+  QUIZ
+  ASSIGNMENT
+  MANUAL
+}
+
+enum GradebookColumnType {
+  QUIZ
+  ASSIGNMENT
+  ATTENDANCE
+  CUSTOM
+}
+
 model User {
   id            String      @id @default(cuid())
   fullName      String
@@ -70,12 +88,14 @@ model User {
   status        UserStatus  @default(ACTIVE)
   avatarUrl     String?
   studentId     String?     @unique
+  archivedAt    DateTime?
   lastLoginAt   DateTime?
   createdAt     DateTime    @default(now())
   updatedAt     DateTime    @updatedAt
 
   createdCourses      Course[]               @relation("CourseCreatedBy")
   instructedCourses   Course[]               @relation("CourseInstructor")
+  managedCourses      CourseManager[]
   enrollments         Enrollment[]
   assignmentCreated   Assignment[]           @relation("AssignmentCreatedBy")
   submissions         AssignmentSubmission[]
@@ -85,6 +105,10 @@ model User {
   questionsAsked      CourseQuestion[]       @relation("CourseQuestionAskedBy")
   questionAnswers     CourseQuestionAnswer[] @relation("CourseQuestionAnsweredBy")
   lessonProgress      LessonProgress[]
+  gradebookEntries    GradebookEntry[]
+  createdGradebookColumns GradebookColumn[] @relation("GradebookColumnCreatedBy")
+  gradebookCells      GradebookCell[]
+  gradebookPublishes  GradebookPublication[] @relation("GradebookPublishedBy")
   notifications       Notification[]
   auditLogs           AuditLog[]             @relation("AuditLogActor")
 }
@@ -104,6 +128,7 @@ model Course {
 
   createdBy     User         @relation("CourseCreatedBy", fields: [createdById], references: [id], onDelete: Restrict)
   instructor    User?        @relation("CourseInstructor", fields: [instructorId], references: [id], onDelete: SetNull)
+  courseManagers CourseManager[]
 
   enrollments   Enrollment[]
   lessons       Lesson[]
@@ -113,6 +138,10 @@ model Course {
   questionBank  QuestionBankItem[]
   announcements Announcement[]
   questions     CourseQuestion[]
+  gradebookEntries GradebookEntry[]
+  gradebookColumns GradebookColumn[]
+  gradebookCells   GradebookCell[]
+  gradebookPublication GradebookPublication?
 }
 
 model Enrollment {
@@ -128,6 +157,21 @@ model Enrollment {
   @@unique([studentId, courseId])
   @@index([courseId])
   @@index([studentId])
+}
+
+model CourseManager {
+  id         String   @id @default(cuid())
+  createdAt  DateTime @default(now())
+
+  courseId   String
+  userId     String
+
+  course     Course   @relation(fields: [courseId], references: [id], onDelete: Cascade)
+  user       User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([courseId, userId])
+  @@index([courseId])
+  @@index([userId])
 }
 
 model Lesson {
@@ -222,6 +266,7 @@ model Assignment {
   instructions     String?
   attachmentUrl    String?
   submissionType   AssignmentSubmissionType  @default(FILE)
+  status           AssignmentStatus          @default(DRAFT)
   dueAt            DateTime?
   createdAt        DateTime                  @default(now())
   updatedAt        DateTime                  @updatedAt
@@ -256,6 +301,7 @@ model AssignmentSubmission {
 
   assignment     Assignment  @relation(fields: [assignmentId], references: [id], onDelete: Cascade)
   student        User        @relation(fields: [studentId], references: [id], onDelete: Cascade)
+  selectedForGradebook GradebookCell[] @relation("GradebookCellSelectedAssignmentSubmission")
 
   @@unique([assignmentId, studentId])
   @@index([studentId])
@@ -269,10 +315,12 @@ model Quiz {
   status               QuizStatus   @default(DRAFT)
   timeLimitMinutes     Int
   maxAttempts          Int          @default(1)
+  dueAt                DateTime?
   totalMarks           Float?
   shuffleQuestions     Boolean      @default(true)
   shuffleOptions       Boolean      @default(false)
   showScoreImmediately Boolean      @default(true)
+  archivedAt           DateTime?
   createdAt            DateTime     @default(now())
   updatedAt            DateTime     @updatedAt
 
@@ -363,6 +411,7 @@ model QuizAttempt {
   quiz              Quiz        @relation(fields: [quizId], references: [id], onDelete: Cascade)
   student           User        @relation(fields: [studentId], references: [id], onDelete: Cascade)
   answers           QuizAnswer[]
+  selectedForGradebook GradebookCell[] @relation("GradebookCellSelectedQuizAttempt")
 
   @@index([quizId])
   @@index([studentId])
@@ -464,4 +513,90 @@ model AuditLog {
   @@index([actorId])
   @@index([targetType, targetId])
   @@index([createdAt])
+}
+
+model GradebookEntry {
+  id          String              @id @default(cuid())
+  title       String
+  entryKey    String
+  sourceType  GradebookSourceType
+  sourceId    String?
+  score       Float
+  maxScore    Float?
+  createdAt   DateTime            @default(now())
+  updatedAt   DateTime            @updatedAt
+
+  courseId    String
+  studentId   String
+
+  course      Course              @relation(fields: [courseId], references: [id], onDelete: Cascade)
+  student     User                @relation(fields: [studentId], references: [id], onDelete: Cascade)
+
+  @@unique([courseId, studentId, entryKey])
+  @@index([courseId])
+  @@index([studentId])
+}
+
+model GradebookPublication {
+  id            String   @id @default(cuid())
+  publishedAt   DateTime?
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  courseId      String   @unique
+  updatedById   String
+
+  course        Course   @relation(fields: [courseId], references: [id], onDelete: Cascade)
+  updatedBy     User     @relation("GradebookPublishedBy", fields: [updatedById], references: [id], onDelete: Restrict)
+}
+
+model GradebookColumn {
+  id              String             @id @default(cuid())
+  title           String
+  key             String
+  type            GradebookColumnType
+  sourceId        String?
+  order           Int
+  maxScore        Float?
+  includeInTotals Boolean            @default(true)
+  createdAt       DateTime           @default(now())
+  updatedAt       DateTime           @updatedAt
+
+  courseId        String
+  createdById     String?
+
+  course          Course             @relation(fields: [courseId], references: [id], onDelete: Cascade)
+  createdBy       User?              @relation("GradebookColumnCreatedBy", fields: [createdById], references: [id], onDelete: SetNull)
+  cells           GradebookCell[]
+
+  @@unique([courseId, key])
+  @@unique([courseId, order])
+  @@index([courseId])
+  @@index([type, sourceId])
+}
+
+model GradebookCell {
+  id                             String                @id @default(cuid())
+  score                          Float?
+  notes                          String?
+  createdAt                      DateTime              @default(now())
+  updatedAt                      DateTime              @updatedAt
+
+  columnId                       String
+  courseId                       String
+  studentId                      String
+  selectedQuizAttemptId          String?
+  selectedAssignmentSubmissionId String?
+
+  column                         GradebookColumn       @relation(fields: [columnId], references: [id], onDelete: Cascade)
+  course                         Course                @relation(fields: [courseId], references: [id], onDelete: Cascade)
+  student                        User                  @relation(fields: [studentId], references: [id], onDelete: Cascade)
+  selectedQuizAttempt            QuizAttempt?          @relation("GradebookCellSelectedQuizAttempt", fields: [selectedQuizAttemptId], references: [id], onDelete: SetNull)
+  selectedAssignmentSubmission   AssignmentSubmission? @relation("GradebookCellSelectedAssignmentSubmission", fields: [selectedAssignmentSubmissionId], references: [id], onDelete: SetNull)
+
+  @@unique([columnId, studentId])
+  @@index([courseId])
+  @@index([studentId])
+  @@index([selectedQuizAttemptId])
+  @@index([selectedAssignmentSubmissionId])
 }

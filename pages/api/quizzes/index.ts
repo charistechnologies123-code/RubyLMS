@@ -3,31 +3,13 @@ import { prisma } from "@/lib/prisma";
 import { createAuditLog } from "@/lib/audit";
 import { notifyUsers } from "@/lib/notifications";
 import { withApiAuth, type AuthedNextApiRequest } from "@/lib/api";
+import { getVisibleQuizWhere } from "@/lib/lms";
 import { canManageCourse } from "@/lib/permissions";
 
 async function handler(req: AuthedNextApiRequest, res: NextApiResponse) {
   if (req.method === "GET") {
-    const where =
-      req.session.role === "STUDENT"
-        ? {
-            course: {
-              enrollments: {
-                some: {
-                  studentId: req.session.userId,
-                },
-              },
-            },
-          }
-        : req.session.role === "INSTRUCTOR"
-          ? {
-              course: {
-                OR: [{ instructorId: req.session.userId }, { createdById: req.session.userId }],
-              },
-            }
-          : {};
-
     const quizzes = await prisma.quiz.findMany({
-      where,
+      where: getVisibleQuizWhere(req.session),
       orderBy: { createdAt: "desc" },
       include: {
         course: true,
@@ -65,6 +47,8 @@ async function handler(req: AuthedNextApiRequest, res: NextApiResponse) {
       instructions,
       timeLimitMinutes,
       maxAttempts,
+      status,
+      dueAt,
       shuffleQuestions,
       shuffleOptions,
       showScoreImmediately,
@@ -77,6 +61,8 @@ async function handler(req: AuthedNextApiRequest, res: NextApiResponse) {
       instructions?: string;
       timeLimitMinutes?: string;
       maxAttempts?: string;
+      status?: "DRAFT" | "PUBLISHED";
+      dueAt?: string;
       shuffleQuestions?: string;
       shuffleOptions?: string;
       showScoreImmediately?: string;
@@ -87,16 +73,25 @@ async function handler(req: AuthedNextApiRequest, res: NextApiResponse) {
       return res.status(400).json({ error: "courseId, title, timeLimitMinutes, and questions are required." });
     }
 
+    if (req.session.role === "STUDENT") {
+      return res.status(403).json({ error: "Only admins and instructors can create quizzes." });
+    }
+
     const course = await prisma.course.findUnique({
       where: { id: courseId },
-      include: { enrollments: true },
+      include: { enrollments: true, courseManagers: true },
     });
 
     if (!course) {
       return res.status(404).json({ error: "Course not found." });
     }
 
-    if (!canManageCourse(req.session, course.instructorId)) {
+    if (
+      !canManageCourse(
+        req.session,
+        [course.instructorId, course.createdById, ...course.courseManagers.map((manager) => manager.userId)].filter(Boolean) as string[],
+      )
+    ) {
       return res.status(403).json({ error: "Forbidden" });
     }
 
@@ -116,9 +111,10 @@ async function handler(req: AuthedNextApiRequest, res: NextApiResponse) {
         description: description || null,
         instructions: instructions || null,
         createdById: req.session.userId,
-        status: "PUBLISHED",
+        status: status ?? "DRAFT",
         timeLimitMinutes: Number(timeLimitMinutes),
         maxAttempts: maxAttempts ? Number(maxAttempts) : 1,
+        dueAt: dueAt ? new Date(dueAt) : null,
         shuffleQuestions: shuffleQuestions !== "false",
         shuffleOptions: shuffleOptions === "true",
         showScoreImmediately: showScoreImmediately !== "false",
@@ -146,11 +142,13 @@ async function handler(req: AuthedNextApiRequest, res: NextApiResponse) {
       },
     });
 
-    await notifyUsers(
-      course.enrollments.map((enrollment) => enrollment.studentId),
-      "New quiz available",
-      `${quiz.title} is now available in ${course.title}.`,
-    );
+    if (quiz.status === "PUBLISHED") {
+      await notifyUsers(
+        course.enrollments.map((enrollment) => enrollment.studentId),
+        "New quiz available",
+        `${quiz.title} is now available in ${course.title}.`,
+      );
+    }
 
     await createAuditLog({
       actorId: req.session.userId,

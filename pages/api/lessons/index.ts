@@ -23,14 +23,19 @@ async function handler(req: AuthedNextApiRequest, res: NextApiResponse) {
 
   const course = await prisma.course.findUnique({
     where: { id: courseId },
-    include: { lessons: true },
+    include: { lessons: true, courseManagers: true },
   });
 
   if (!course) {
     return res.status(404).json({ error: "Course not found." });
   }
 
-  if (!canManageCourse(req.session, course.instructorId)) {
+  if (
+    !canManageCourse(
+      req.session,
+      [course.instructorId, course.createdById, ...course.courseManagers.map((manager) => manager.userId)].filter(Boolean) as string[],
+    )
+  ) {
     return res.status(403).json({ error: "Forbidden" });
   }
 

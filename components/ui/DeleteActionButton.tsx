@@ -3,6 +3,7 @@
 import { useRouter } from "next/router";
 import { useState } from "react";
 import toast from "react-hot-toast";
+import { useConfirmDialog } from "@/components/ui/ConfirmDialogProvider";
 
 type DeleteActionButtonProps = {
   action: string;
@@ -20,6 +21,7 @@ export default function DeleteActionButton({
   disabled = false,
 }: DeleteActionButtonProps) {
   const router = useRouter();
+  const { confirm } = useConfirmDialog();
   const [deleting, setDeleting] = useState(false);
 
   async function handleDelete() {
@@ -27,7 +29,12 @@ export default function DeleteActionButton({
       return;
     }
 
-    const confirmed = window.confirm(confirmMessage);
+    const confirmed = await confirm({
+      title: "Confirm deletion",
+      message: confirmMessage,
+      confirmLabel: "Delete permanently",
+      tone: "danger",
+    });
 
     if (!confirmed) {
       return;

@@ -23,7 +23,7 @@ async function handler(req: AuthedNextApiRequest, res: NextApiResponse) {
 
   const question = await prisma.courseQuestion.findUnique({
     where: { id: questionId },
-    include: { course: true },
+    include: { course: { include: { courseManagers: true } } },
   });
 
   if (!question) {
@@ -33,7 +33,8 @@ async function handler(req: AuthedNextApiRequest, res: NextApiResponse) {
   if (
     req.session.role !== "ADMIN" &&
     question.course.instructorId !== req.session.userId &&
-    question.course.createdById !== req.session.userId
+    question.course.createdById !== req.session.userId &&
+    !question.course.courseManagers.some((manager) => manager.userId === req.session.userId)
   ) {
     return res.status(403).json({ error: "Forbidden" });
   }

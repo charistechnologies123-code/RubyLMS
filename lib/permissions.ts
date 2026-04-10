@@ -17,8 +17,25 @@ export function canManageUsers(session: SessionUser | null) {
   return isAdmin(session);
 }
 
-export function canManageCourse(session: SessionUser | null, instructorId?: string | null) {
-  return isAdmin(session) || (!!session && isInstructor(session) && instructorId === session.userId);
+export function canManageCourse(
+  session: SessionUser | null,
+  instructorIdOrManagerIds?: string | string[] | null,
+) {
+  if (isAdmin(session)) {
+    return true;
+  }
+
+  if (!session || !isInstructor(session)) {
+    return false;
+  }
+
+  if (typeof instructorIdOrManagerIds === "string") {
+    return instructorIdOrManagerIds === session.userId;
+  }
+
+  return Array.isArray(instructorIdOrManagerIds)
+    ? instructorIdOrManagerIds.includes(session.userId)
+    : false;
 }
 
 export function canEnrollStudents(session: SessionUser | null) {

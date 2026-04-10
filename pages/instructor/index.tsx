@@ -3,6 +3,7 @@ import DashboardLayout from "@/components/dashboard/DashboardLayout";
 import Badge from "@/components/ui/Badge";
 import Panel from "@/components/ui/Panel";
 import StatCard from "@/components/ui/StatCard";
+import { getManagedCourseWhere } from "@/lib/courseManagers";
 import { formatShortDate } from "@/lib/format";
 import { requirePageAuth } from "@/lib/pageAuth";
 import { prisma } from "@/lib/prisma";
@@ -12,9 +13,7 @@ export async function getServerSideProps(ctx: GetServerSidePropsContext) {
   return requirePageAuth(ctx, ["INSTRUCTOR"], async (session) => {
     const [courses, assignments, questions, announcements] = await Promise.all([
       prisma.course.findMany({
-        where: {
-          OR: [{ instructorId: session.userId }, { createdById: session.userId }],
-        },
+        where: getManagedCourseWhere(session),
         include: {
           enrollments: true,
           lessons: true,
@@ -32,9 +31,7 @@ export async function getServerSideProps(ctx: GetServerSidePropsContext) {
       }),
       prisma.courseQuestion.findMany({
         where: {
-          course: {
-            OR: [{ instructorId: session.userId }, { createdById: session.userId }],
-          },
+          course: getManagedCourseWhere(session),
         },
         include: {
           course: true,

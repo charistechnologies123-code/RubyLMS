@@ -3,27 +3,14 @@ import { prisma } from "@/lib/prisma";
 import { createAuditLog } from "@/lib/audit";
 import { normalizeImageInput } from "@/lib/media";
 import { withApiAuth, type AuthedNextApiRequest } from "@/lib/api";
+import { normalizeManagerIds } from "@/lib/courseManagers";
+import { getVisibleCourseWhere } from "@/lib/lms";
 import { slugify } from "@/lib/slug";
 
 async function handler(req: AuthedNextApiRequest, res: NextApiResponse) {
   if (req.method === "GET") {
-    const where =
-      req.session.role === "STUDENT"
-        ? {
-            enrollments: {
-              some: {
-                studentId: req.session.userId,
-              },
-            },
-          }
-        : req.session.role === "INSTRUCTOR"
-          ? {
-              OR: [{ instructorId: req.session.userId }, { createdById: req.session.userId }],
-            }
-          : {};
-
     const courses = await prisma.course.findMany({
-      where,
+      where: getVisibleCourseWhere(req.session),
       orderBy: { createdAt: "desc" },
       include: {
         instructor: {
@@ -68,12 +55,17 @@ async function handler(req: AuthedNextApiRequest, res: NextApiResponse) {
   }
 
   if (req.method === "POST") {
-    const { title, description, thumbnailUrl, status, instructorId } = req.body as {
+    if (req.session.role === "STUDENT") {
+      return res.status(403).json({ error: "Only admins and instructors can create courses." });
+    }
+
+    const { title, description, thumbnailUrl, status, instructorId, managerIds } = req.body as {
       title?: string;
       description?: string;
       thumbnailUrl?: string;
       status?: "DRAFT" | "PUBLISHED" | "ARCHIVED";
       instructorId?: string;
+      managerIds?: string | string[];
     };
 
     if (!title || !description) {
@@ -89,6 +81,8 @@ async function handler(req: AuthedNextApiRequest, res: NextApiResponse) {
         error: error instanceof Error ? error.message : "Invalid course thumbnail.",
       });
     }
+
+    const normalizedManagerIds = normalizeManagerIds(managerIds);
 
     const slugBase = slugify(title);
     const slugCount = await prisma.course.count({
@@ -109,6 +103,14 @@ async function handler(req: AuthedNextApiRequest, res: NextApiResponse) {
         createdById: req.session.userId,
         instructorId:
           req.session.role === "INSTRUCTOR" ? req.session.userId : instructorId || null,
+        courseManagers:
+          req.session.role === "ADMIN" && normalizedManagerIds.length
+            ? {
+                create: normalizedManagerIds.map((userId) => ({
+                  userId,
+                })),
+              }
+            : undefined,
       },
       include: {
         instructor: {

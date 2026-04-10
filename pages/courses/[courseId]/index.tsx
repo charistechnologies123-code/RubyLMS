@@ -7,10 +7,12 @@ import ApiForm from "@/components/ui/ApiForm";
 import ApiActionButton from "@/components/ui/ApiActionButton";
 import Badge from "@/components/ui/Badge";
 import EmptyState from "@/components/ui/EmptyState";
+import FileUploadField from "@/components/ui/FileUploadField";
 import FormField from "@/components/ui/FormField";
 import ImageUploadField from "@/components/ui/ImageUploadField";
 import Panel from "@/components/ui/Panel";
 import QuizBuilderField from "@/components/ui/QuizBuilderField";
+import { getManagedCourseWhere } from "@/lib/courseManagers";
 import { assertRoleAccess, getDefaultRouteForRole, getSessionFromPageContext } from "@/lib/auth";
 import { formatDate, formatShortDate } from "@/lib/format";
 import { canManageCourse } from "@/lib/permissions";
@@ -83,11 +85,12 @@ export async function getServerSideProps(
       id: courseId,
       ...(session.role === "STUDENT"
         ? {
+            status: "PUBLISHED",
             enrollments: { some: { studentId: session.userId } },
           }
         : session.role === "INSTRUCTOR"
           ? {
-              OR: [{ instructorId: session.userId }, { createdById: session.userId }],
+              ...getManagedCourseWhere(session),
             }
           : {}),
     },
@@ -98,8 +101,20 @@ export async function getServerSideProps(
           fullName: true,
         },
       },
+      courseManagers: {
+        select: {
+          user: {
+            select: {
+              id: true,
+              fullName: true,
+              role: true,
+            },
+          },
+        },
+      },
       lessons: {
         orderBy: { order: "asc" },
+        where: session.role === "STUDENT" ? { status: "PUBLISHED" } : undefined,
         include: {
           pages: {
             orderBy: { order: "asc" },
@@ -126,6 +141,13 @@ export async function getServerSideProps(
         },
       },
       assignments: {
+        where:
+          session.role === "STUDENT"
+            ? {
+                status: "PUBLISHED",
+                OR: [{ lessonId: null }, { lesson: { status: "PUBLISHED" } }],
+              }
+            : undefined,
         orderBy: [{ dueAt: "asc" }, { createdAt: "desc" }],
         include: {
           lesson: {
@@ -152,6 +174,14 @@ export async function getServerSideProps(
         },
       },
       quizzes: {
+        where:
+          session.role === "STUDENT"
+            ? {
+                status: "PUBLISHED",
+                archivedAt: null,
+                OR: [{ lessonId: null }, { lesson: { status: "PUBLISHED" } }],
+              }
+            : { archivedAt: null },
         orderBy: { createdAt: "desc" },
         include: {
           lesson: {
@@ -247,8 +277,8 @@ export async function getServerSideProps(
   const instructors =
     session.role === "ADMIN"
       ? await prisma.user.findMany({
-          where: { role: "INSTRUCTOR", status: "ACTIVE" },
-          select: { id: true, fullName: true },
+          where: { role: { in: ["ADMIN", "INSTRUCTOR"] }, status: "ACTIVE", archivedAt: null },
+          select: { id: true, fullName: true, role: true },
           orderBy: { fullName: "asc" },
         })
       : [];
@@ -267,7 +297,10 @@ export default function CourseWorkspacePage({
   course,
   instructors,
 }: CourseWorkspaceProps) {
-  const canManage = canManageCourse(session, course.instructorId);
+  const canManage = canManageCourse(
+    session,
+    [course.instructorId, course.createdById, ...course.courseManagers.map((manager: any) => manager.user.id)].filter(Boolean) as string[],
+  );
   const [activeComposer, setActiveComposer] = useState<CourseComposer>(null);
   const [activeReplyQuestionId, setActiveReplyQuestionId] = useState<string | null>(null);
   const [activeSubmissionAssignmentId, setActiveSubmissionAssignmentId] = useState<string | null>(null);
@@ -333,6 +366,11 @@ export default function CourseWorkspacePage({
               <div className="rounded-[22px] bg-[#faf7ff] p-4">
                 <p className="text-xs uppercase tracking-[0.18em] text-slate-500">Instructor</p>
                 <p className="mt-2 font-semibold text-slate-950">{course.instructor?.fullName ?? "Unassigned"}</p>
+                {course.courseManagers.length ? (
+                  <p className="mt-2 text-sm text-slate-600">
+                    Also managed by {course.courseManagers.map((manager: any) => manager.user.fullName).join(", ")}
+                  </p>
+                ) : null}
               </div>
               <div className="rounded-[22px] bg-[#faf7ff] p-4">
                 <p className="text-xs uppercase tracking-[0.18em] text-slate-500">Created</p>
@@ -378,9 +416,25 @@ export default function CourseWorkspacePage({
                 {course.enrollments.length ? (
                   course.enrollments.map((enrollment: any) => (
                     <div key={enrollment.id} className="rounded-[20px] border border-[#efe6ff] bg-white p-4">
-                      <p className="font-semibold text-slate-950">{enrollment.student.fullName}</p>
-                      <p className="mt-1 text-sm text-slate-600">{enrollment.student.email}</p>
-                      <p className="mt-1 text-sm text-slate-600">{enrollment.student.studentId ?? "No student ID"}</p>
+                      <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
+                        <div>
+                          <p className="font-semibold text-slate-950">{enrollment.student.fullName}</p>
+                          <p className="mt-1 text-sm text-slate-600">{enrollment.student.email}</p>
+                          <p className="mt-1 text-sm text-slate-600">{enrollment.student.studentId ?? "No student ID"}</p>
+                        </div>
+                        {canManage ? (
+                          <ApiActionButton
+                            action="/api/enrollments"
+                            method="DELETE"
+                            payload={{ enrollmentId: enrollment.id }}
+                            successMessage="Student unenrolled."
+                            label="Unenroll"
+                            pendingLabel="Removing..."
+                            tone="danger"
+                            confirmMessage={`Unenroll ${enrollment.student.fullName} from ${course.title}?`}
+                          />
+                        ) : null}
+                      </div>
                     </div>
                   ))
                 ) : (
@@ -421,19 +475,37 @@ export default function CourseWorkspacePage({
                         ]}
                       />
                       {session.role === "ADMIN" && (
-                        <FormField
-                          label="Instructor"
-                          name="instructorId"
-                          as="select"
-                          defaultValue={course.instructorId ?? ""}
-                          options={[
-                            { label: "No instructor yet", value: "" },
-                            ...instructors.map((instructor: any) => ({
-                              label: instructor.fullName,
-                              value: instructor.id,
-                            })),
-                          ]}
-                        />
+                        <>
+                          <FormField
+                            label="Primary instructor"
+                            name="instructorId"
+                            as="select"
+                            defaultValue={course.instructorId ?? ""}
+                            options={[
+                              { label: "No instructor yet", value: "" },
+                              ...instructors.map((instructor: any) => ({
+                                label: `${instructor.fullName} (${instructor.role})`,
+                                value: instructor.id,
+                              })),
+                            ]}
+                          />
+                          <label className="block">
+                            <span className="text-sm font-semibold text-slate-700">Additional instructors/admins</span>
+                            <div className="mt-2 grid gap-2 rounded-[20px] border border-[#e8ddff] bg-white p-4">
+                              {instructors.map((instructor: any) => (
+                                <label key={instructor.id} className="flex items-center gap-3 text-sm text-slate-700">
+                                  <input
+                                    type="checkbox"
+                                    name="managerIds"
+                                    value={instructor.id}
+                                    defaultChecked={course.courseManagers.some((manager: any) => manager.user.id === instructor.id)}
+                                  />
+                                  <span>{instructor.fullName} ({instructor.role})</span>
+                                </label>
+                              ))}
+                            </div>
+                          </label>
+                        </>
                       )}
                       <ImageUploadField
                         label="Course thumbnail"
@@ -450,25 +522,21 @@ export default function CourseWorkspacePage({
                 ) : null}
 
                 <div className="flex flex-wrap gap-3 border-t border-[#f1e8ff] pt-4">
-                  <ApiActionButton
-                    action={`/api/courses/${course.id}`}
-                    method="PATCH"
-                    payload={{ status: course.status === "ARCHIVED" ? "DRAFT" : "ARCHIVED" }}
-                    successMessage={course.status === "ARCHIVED" ? "Course restored from archive." : "Course archived."}
-                    label={course.status === "ARCHIVED" ? "Restore course" : "Archive course"}
-                    pendingLabel={course.status === "ARCHIVED" ? "Restoring..." : "Archiving..."}
-                    tone={course.status === "ARCHIVED" ? "success" : "default"}
-                  />
-                  <ApiActionButton
-                    action={`/api/courses/${course.id}`}
-                    method="DELETE"
-                    successMessage="Course deleted."
-                    label="Delete course"
-                    pendingLabel="Deleting..."
-                    tone="danger"
-                    confirmMessage={`Delete ${course.title}? This action cannot be undone.`}
-                  />
+                  {session.role === "ADMIN" ? (
+                    <ApiActionButton
+                      action={`/api/courses/${course.id}`}
+                      method="PATCH"
+                      payload={{ status: "ARCHIVED" }}
+                      successMessage="Course archived."
+                      label="Archive course"
+                      pendingLabel="Archiving..."
+                      tone="default"
+                    />
+                  ) : null}
                 </div>
+                <p className="text-sm text-slate-600">
+                  Permanent deletion is only available from Admin Archives after a course has been archived.
+                </p>
               </div>
             ) : null}
           </div>
@@ -483,7 +551,7 @@ export default function CourseWorkspacePage({
                     <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
                       <div>
                         <p className="font-semibold text-slate-950">
-                          Lesson {lesson.order}: {lesson.title}
+                          {lesson.title}
                         </p>
                         <p className="mt-2 text-sm text-slate-600">
                           {lesson.content.length > 180 ? `${lesson.content.slice(0, 180)}...` : lesson.content}
@@ -498,7 +566,7 @@ export default function CourseWorkspacePage({
                         href={`/courses/${course.id}/lessons/${lesson.id}`}
                         className="inline-flex rounded-2xl border border-[#e8ddff] bg-[#faf7ff] px-4 py-3 text-sm font-semibold text-[#6b00ff] transition hover:bg-[#f2e8ff]"
                       >
-                        Open lesson page
+                        Open module
                       </Link>
                     </div>
                   </div>
@@ -519,7 +587,7 @@ export default function CourseWorkspacePage({
                     <ApiForm
                       action="/api/lessons"
                       submitLabel="Add module"
-                      successMessage="Lesson added."
+                      successMessage="Module added."
                       className="grid gap-4"
                       onSuccess={() => setActiveComposer(null)}
                     >
@@ -605,7 +673,7 @@ export default function CourseWorkspacePage({
                         options={[
                           { label: "General course resource", value: "" },
                           ...course.lessons.map((lesson: any) => ({
-                            label: `Lesson ${lesson.order}: ${lesson.title}`,
+                            label: lesson.title,
                             value: lesson.id,
                           })),
                         ]}
@@ -625,7 +693,11 @@ export default function CourseWorkspacePage({
                           { label: "Other", value: "OTHER" },
                         ]}
                       />
-                      <FormField label="File URL" name="fileUrl" placeholder="https://..." />
+                      <FileUploadField
+                        label="Resource file"
+                        name="fileUrl"
+                        helperText="Upload a PDF, DOC, DOCX, TXT, CSV, or image."
+                      />
                       <FormField label="External URL" name="externalUrl" placeholder="https://..." />
                     </ApiForm>
                   </div>
@@ -661,7 +733,7 @@ export default function CourseWorkspacePage({
                         options={[
                           { label: "General course assignment", value: "" },
                           ...course.lessons.map((lesson: any) => ({
-                            label: `Module ${lesson.order}: ${lesson.title}`,
+                            label: lesson.title,
                             value: lesson.id,
                           })),
                         ]}
@@ -678,6 +750,16 @@ export default function CourseWorkspacePage({
                           { label: "Text", value: "TEXT" },
                         ]}
                       />
+                      <FormField
+                        label="Status"
+                        name="status"
+                        as="select"
+                        defaultValue="DRAFT"
+                        options={[
+                          { label: "Draft", value: "DRAFT" },
+                          { label: "Published", value: "PUBLISHED" },
+                        ]}
+                      />
                       <FormField label="Due date" name="dueAt" type="datetime-local" />
                       <div className="md:col-span-2">
                         <FormField label="Description" name="description" as="textarea" required />
@@ -686,7 +768,11 @@ export default function CourseWorkspacePage({
                         <FormField label="Instructions" name="instructions" as="textarea" />
                       </div>
                       <div className="md:col-span-2">
-                        <FormField label="Attachment URL" name="attachmentUrl" placeholder="https://..." />
+                        <FileUploadField
+                          label="Assignment attachment"
+                          name="attachmentUrl"
+                          helperText="Upload a PDF, DOC, DOCX, TXT, CSV, or image."
+                        />
                       </div>
                     </ApiForm>
                   </div>
@@ -744,7 +830,11 @@ export default function CourseWorkspacePage({
                               onSuccess={() => setActiveSubmissionAssignmentId(null)}
                             >
                               <input type="hidden" name="assignmentId" value={assignment.id} />
-                              <FormField label="File URL" name="fileUrl" placeholder="https://..." />
+                              <FileUploadField
+                                label="Submission file"
+                                name="fileUrl"
+                                helperText="Upload your submission file or leave empty if you are submitting by link or text."
+                              />
                               <FormField label="Link URL" name="linkUrl" placeholder="https://..." />
                               <FormField label="Text submission" name="textSubmission" as="textarea" />
                             </ApiForm>
@@ -819,7 +909,7 @@ export default function CourseWorkspacePage({
                         options={[
                           { label: "General course quiz", value: "" },
                           ...course.lessons.map((lesson: any) => ({
-                            label: `Module ${lesson.order}: ${lesson.title}`,
+                            label: lesson.title,
                             value: lesson.id,
                           })),
                         ]}
@@ -827,6 +917,17 @@ export default function CourseWorkspacePage({
                       <FormField label="Title" name="title" required />
                       <FormField label="Time limit (minutes)" name="timeLimitMinutes" type="number" defaultValue="20" required />
                       <FormField label="Max attempts" name="maxAttempts" type="number" defaultValue="1" />
+                      <FormField
+                        label="Status"
+                        name="status"
+                        as="select"
+                        defaultValue="DRAFT"
+                        options={[
+                          { label: "Draft", value: "DRAFT" },
+                          { label: "Published", value: "PUBLISHED" },
+                        ]}
+                      />
+                      <FormField label="Due date" name="dueAt" type="datetime-local" />
                       <div className="md:col-span-2">
                         <FormField label="Description" name="description" as="textarea" />
                       </div>
@@ -891,11 +992,11 @@ export default function CourseWorkspacePage({
                       </div>
                     ) : (
                       <div className="mt-5 space-y-3">
-                        <Link
-                          href={`/quizzes/${quiz.id}`}
-                          className="inline-flex rounded-2xl border border-[#e8ddff] bg-[#faf7ff] px-4 py-3 text-sm font-semibold text-[#6b00ff]"
-                        >
-                          Open quiz workspace
+                          <Link
+                            href={`/quizzes/${quiz.id}?mode=manage`}
+                            className="inline-flex rounded-2xl border border-[#e8ddff] bg-[#faf7ff] px-4 py-3 text-sm font-semibold text-[#6b00ff]"
+                          >
+                            Open quiz workspace
                         </Link>
                         {quiz.quizQuestions.map((question: any, index: number) => (
                           <div key={question.id} className="rounded-[22px] bg-[#faf7ff] p-4">

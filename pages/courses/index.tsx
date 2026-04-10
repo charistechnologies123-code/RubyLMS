@@ -1,6 +1,6 @@
 import type { GetServerSidePropsContext, InferGetServerSidePropsType } from "next";
 import Link from "next/link";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import ApiActionButton from "@/components/ui/ApiActionButton";
 import DashboardLayout from "@/components/dashboard/DashboardLayout";
 import ApiForm from "@/components/ui/ApiForm";
@@ -9,6 +9,7 @@ import EmptyState from "@/components/ui/EmptyState";
 import FormField from "@/components/ui/FormField";
 import ImageUploadField from "@/components/ui/ImageUploadField";
 import Panel from "@/components/ui/Panel";
+import { getVisibleCourseWhere } from "@/lib/lms";
 import { requirePageAuth } from "@/lib/pageAuth";
 import { prisma } from "@/lib/prisma";
 import { serialize } from "@/lib/serialize";
@@ -16,16 +17,7 @@ import { serialize } from "@/lib/serialize";
 export async function getServerSideProps(ctx: GetServerSidePropsContext) {
   return requirePageAuth(ctx, ["ADMIN", "INSTRUCTOR", "STUDENT"], async (session) => {
     const courses = await prisma.course.findMany({
-      where:
-        session.role === "STUDENT"
-          ? {
-              enrollments: { some: { studentId: session.userId } },
-            }
-          : session.role === "INSTRUCTOR"
-            ? {
-                OR: [{ instructorId: session.userId }, { createdById: session.userId }],
-              }
-            : {},
+      where: getVisibleCourseWhere(session),
       orderBy: { createdAt: "desc" },
       select: {
         id: true,
@@ -36,6 +28,17 @@ export async function getServerSideProps(ctx: GetServerSidePropsContext) {
         createdAt: true,
         instructor: {
           select: { id: true, fullName: true },
+        },
+        courseManagers: {
+          select: {
+            user: {
+              select: {
+                id: true,
+                fullName: true,
+                role: true,
+              },
+            },
+          },
         },
         lessons: {
           orderBy: { order: "asc" },
@@ -65,28 +68,8 @@ export async function getServerSideProps(ctx: GetServerSidePropsContext) {
       },
     });
 
-    const instructors =
-      session.role === "ADMIN"
-        ? await prisma.user.findMany({
-            where: { role: "INSTRUCTOR", status: "ACTIVE" },
-            select: { id: true, fullName: true },
-            orderBy: { fullName: "asc" },
-          })
-        : [];
-
-    const students =
-      session.role !== "STUDENT"
-        ? await prisma.user.findMany({
-            where: { role: "STUDENT", status: "ACTIVE" },
-            select: { id: true, fullName: true, studentId: true },
-            orderBy: { fullName: "asc" },
-          })
-        : [];
-
     return {
       courses: serialize(courses),
-      instructors: serialize(instructors),
-      students: serialize(students),
     };
   });
 }
@@ -94,12 +77,58 @@ export async function getServerSideProps(ctx: GetServerSidePropsContext) {
 export default function CoursesDirectoryPage({
   session,
   courses,
-  instructors,
-  students,
 }: InferGetServerSidePropsType<typeof getServerSideProps>) {
   const canManage = session.role !== "STUDENT";
   const [showCreateCourse, setShowCreateCourse] = useState(false);
   const [expandedCourseId, setExpandedCourseId] = useState<string | null>(null);
+  const [selectorOptions, setSelectorOptions] = useState<{
+    students: Array<{ id: string; fullName: string; studentId: string | null }>;
+    instructors: Array<{ id: string; fullName: string; role: string }>;
+  }>({ students: [], instructors: [] });
+  const [loadingSelectorOptions, setLoadingSelectorOptions] = useState(false);
+
+  useEffect(() => {
+    if (!canManage) {
+      return;
+    }
+
+    if (selectorOptions.students.length || selectorOptions.instructors.length || loadingSelectorOptions) {
+      return;
+    }
+
+    let active = true;
+    setLoadingSelectorOptions(true);
+
+    void fetch("/api/course-form-options")
+      .then(async (response) => {
+        const result = await response.json().catch(() => ({}));
+
+        if (!response.ok) {
+          throw new Error(result.error ?? "Unable to load course options.");
+        }
+
+        if (active) {
+          setSelectorOptions({
+            students: result.students ?? [],
+            instructors: result.instructors ?? [],
+          });
+        }
+      })
+      .catch(() => {
+        if (active) {
+          setSelectorOptions({ students: [], instructors: [] });
+        }
+      })
+      .finally(() => {
+        if (active) {
+          setLoadingSelectorOptions(false);
+        }
+      });
+
+    return () => {
+      active = false;
+    };
+  }, [canManage, loadingSelectorOptions, selectorOptions.instructors.length, selectorOptions.students.length]);
 
   return (
     <DashboardLayout
@@ -108,97 +137,126 @@ export default function CoursesDirectoryPage({
       title="Courses"
       description="Browse courses from a clean card directory, then expand the one you want to manage."
     >
-      {!courses.length ? (
-        <EmptyState
-          title="No courses available yet"
-          description="Once courses are created or you are enrolled, they will appear here."
-        />
-      ) : (
-        <div className="grid gap-6 xl:grid-cols-2">
-          {canManage ? (
-            <Panel
-              title="Create Course"
-              subtitle="Keep the homepage card-based and open this builder only when you need a new course."
-              className="overflow-hidden"
-            >
-              <div className="space-y-4">
-                <button
-                  type="button"
-                  onClick={() => setShowCreateCourse((current) => !current)}
-                  className={`rounded-2xl px-4 py-3 text-sm font-semibold transition ${
-                    showCreateCourse
-                      ? "bg-[linear-gradient(135deg,#6b00ff,#8c3cff)] text-white"
-                      : "border border-[#e8ddff] bg-white text-[#6b00ff]"
-                  }`}
-                >
-                  {showCreateCourse ? "Close Course Builder" : "Create Course"}
-                </button>
+      <div className="grid gap-6 xl:grid-cols-2">
+        {canManage ? (
+          <Panel
+            title="Create Course"
+            subtitle="Keep the homepage card-based and open this builder only when you need a new course."
+            className="overflow-hidden"
+          >
+            <div className="space-y-4">
+              <button
+                type="button"
+                onClick={() => setShowCreateCourse((current) => !current)}
+                className={`rounded-2xl px-4 py-3 text-sm font-semibold transition ${
+                  showCreateCourse
+                    ? "bg-[linear-gradient(135deg,#6b00ff,#8c3cff)] text-white"
+                    : "border border-[#e8ddff] bg-white text-[#6b00ff]"
+                }`}
+              >
+                {showCreateCourse ? "Close Course Builder" : "Create Course"}
+              </button>
 
-                {showCreateCourse ? (
-                  <div className="rounded-[24px] border border-[#e8ddff] bg-[#fcfaff] p-5">
-                    <ApiForm
-                      action="/api/courses"
-                      submitLabel="Create course"
-                      successMessage="Course created successfully."
-                      className="grid gap-4 md:grid-cols-2"
-                      onSuccess={() => setShowCreateCourse(false)}
-                    >
-                      <FormField label="Course title" name="title" placeholder="Introduction to Data Literacy" required />
-                      <FormField
-                        label="Course status"
-                        name="status"
-                        as="select"
-                        defaultValue="DRAFT"
-                        options={[
-                          { label: "Draft", value: "DRAFT" },
-                          { label: "Published", value: "PUBLISHED" },
-                        ]}
-                      />
+              {showCreateCourse ? (
+                <div className="rounded-[24px] border border-[#e8ddff] bg-[#fcfaff] p-5">
+                  <ApiForm
+                    action="/api/courses"
+                    submitLabel="Create course"
+                    successMessage="Course created successfully."
+                    className="grid gap-4 md:grid-cols-2"
+                    onSuccess={() => setShowCreateCourse(false)}
+                  >
+                    <FormField label="Course title" name="title" placeholder="Introduction to Data Literacy" required />
+                    <FormField
+                      label="Course status"
+                      name="status"
+                      as="select"
+                      defaultValue="DRAFT"
+                      options={[
+                        { label: "Draft", value: "DRAFT" },
+                        { label: "Published", value: "PUBLISHED" },
+                      ]}
+                    />
                       {session.role === "ADMIN" && (
-                        <FormField
-                          label="Assign instructor"
-                          name="instructorId"
-                          as="select"
-                          defaultValue=""
-                          options={[
-                            { label: "No instructor yet", value: "" },
-                            ...instructors.map((instructor) => ({
-                              label: instructor.fullName,
-                              value: instructor.id,
-                            })),
-                          ]}
-                        />
+                        <>
+                          <FormField
+                            label="Primary instructor"
+                            name="instructorId"
+                            as="select"
+                            defaultValue=""
+                            options={[
+                              {
+                                label: loadingSelectorOptions
+                                  ? "Loading instructors..."
+                                  : "No instructor yet",
+                                value: "",
+                              },
+                              ...selectorOptions.instructors.map((instructor) => ({
+                                label: `${instructor.fullName} (${instructor.role})`,
+                                value: instructor.id,
+                              })),
+                            ]}
+                          />
+                          <label className="block md:col-span-2">
+                            <span className="text-sm font-semibold text-slate-700">Additional instructors/admins</span>
+                            <div className="mt-2 grid gap-2 rounded-[20px] border border-[#e8ddff] bg-white p-4">
+                              {loadingSelectorOptions ? (
+                                <p className="text-sm text-slate-600">Loading staff list...</p>
+                              ) : selectorOptions.instructors.length ? selectorOptions.instructors.map((instructor) => (
+                                <label key={instructor.id} className="flex items-center gap-3 text-sm text-slate-700">
+                                  <input type="checkbox" name="managerIds" value={instructor.id} />
+                                  <span>{instructor.fullName} ({instructor.role})</span>
+                                </label>
+                              )) : (
+                                <p className="text-sm text-slate-600">No active staff available.</p>
+                              )}
+                            </div>
+                          </label>
+                        </>
                       )}
-                      <div className="md:col-span-2">
-                        <ImageUploadField
-                          label="Course thumbnail"
-                          name="thumbnailUrl"
-                          helperText="Upload a course cover image up to 750KB."
-                          emptyLabel="No cover"
-                          maxFileSizeKb={750}
-                          previewClassName="h-24 w-40 rounded-[20px]"
-                        />
-                      </div>
-                      <div className="md:col-span-2">
-                        <FormField
-                          label="Description"
-                          name="description"
-                          as="textarea"
-                          placeholder="Add the course overview, outcomes, and expectations."
-                          required
-                        />
-                      </div>
-                    </ApiForm>
-                  </div>
-                ) : (
-                  <p className="text-sm leading-7 text-slate-600">
-                    New courses open from this card so the rest of the homepage can stay focused on the course list.
-                  </p>
-                )}
-              </div>
-            </Panel>
-          ) : null}
+                    <div className="md:col-span-2">
+                      <ImageUploadField
+                        label="Course thumbnail"
+                        name="thumbnailUrl"
+                        helperText="Upload a course cover image up to 750KB."
+                        emptyLabel="No cover"
+                        maxFileSizeKb={750}
+                        previewClassName="h-24 w-40 rounded-[20px]"
+                      />
+                    </div>
+                    <div className="md:col-span-2">
+                      <FormField
+                        label="Description"
+                        name="description"
+                        as="textarea"
+                        placeholder="Add the course overview, outcomes, and expectations."
+                        required
+                      />
+                    </div>
+                  </ApiForm>
+                </div>
+              ) : (
+                <p className="text-sm leading-7 text-slate-600">
+                  New courses open from this card so the rest of the homepage can stay focused on the course list.
+                </p>
+              )}
+            </div>
+          </Panel>
+        ) : null}
 
+        {!courses.length ? (
+          <div className={canManage ? "" : "xl:col-span-2"}>
+            <EmptyState
+              title="No courses available yet"
+              description={
+                canManage
+                  ? "You can create the first course from the builder panel."
+                  : "Once you are enrolled in a published course, it will appear here."
+              }
+            />
+          </div>
+        ) : (
+          <>
           {courses.map((course) => (
             <Panel key={course.id} title={course.title} subtitle={course.description} className="overflow-hidden">
               {course.thumbnailUrl ? (
@@ -220,6 +278,11 @@ export default function CoursesDirectoryPage({
                   <div className="rounded-[22px] bg-[#faf7ff] p-4">
                     <p className="text-xs uppercase tracking-[0.18em] text-slate-500">Instructor</p>
                     <p className="mt-2 font-semibold text-slate-950">{course.instructor?.fullName ?? "Unassigned"}</p>
+                    {course.courseManagers.length ? (
+                      <p className="mt-2 text-sm text-slate-600">
+                        Also managed by {course.courseManagers.map((manager) => manager.user.fullName).join(", ")}
+                      </p>
+                    ) : null}
                     <p className="mt-2 text-sm text-slate-600">{course._count.enrollments} learner(s) enrolled</p>
                   </div>
 
@@ -229,7 +292,7 @@ export default function CoursesDirectoryPage({
                       {course.lessons.length ? (
                         course.lessons.map((lesson) => (
                           <div key={lesson.id} className="rounded-[18px] border border-[#efe6ff] bg-white px-4 py-3 text-sm text-slate-700">
-                            Module {lesson.order}: {lesson.title} ({lesson.pages.length} page{lesson.pages.length === 1 ? "" : "s"})
+                            {lesson.title} ({lesson.pages.length} page{lesson.pages.length === 1 ? "" : "s"})
                           </div>
                         ))
                       ) : (
@@ -287,19 +350,48 @@ export default function CoursesDirectoryPage({
                             ]}
                           />
                           {session.role === "ADMIN" ? (
-                            <FormField
-                              label="Instructor"
-                              name="instructorId"
-                              as="select"
-                              defaultValue={course.instructor?.id ?? ""}
-                              options={[
-                                { label: "No instructor yet", value: "" },
-                                ...instructors.map((instructor) => ({
-                                  label: instructor.fullName,
-                                  value: instructor.id,
-                                })),
-                              ]}
-                            />
+                            <>
+                              <FormField
+                                label="Primary instructor"
+                                name="instructorId"
+                                as="select"
+                                defaultValue={course.instructor?.id ?? ""}
+                                options={[
+                                  {
+                                    label: loadingSelectorOptions
+                                      ? "Loading instructors..."
+                                      : "No instructor yet",
+                                    value: "",
+                                  },
+                                  ...selectorOptions.instructors.map((instructor) => ({
+                                    label: `${instructor.fullName} (${instructor.role})`,
+                                    value: instructor.id,
+                                  })),
+                                ]}
+                              />
+                              <label className="block">
+                                <span className="text-sm font-semibold text-slate-700">Additional instructors/admins</span>
+                                <div className="mt-2 grid gap-2 rounded-[20px] border border-[#e8ddff] bg-white p-4">
+                                  {loadingSelectorOptions ? (
+                                    <p className="text-sm text-slate-600">Loading staff list...</p>
+                                  ) : selectorOptions.instructors.length ? (
+                                    selectorOptions.instructors.map((instructor) => (
+                                    <label key={instructor.id} className="flex items-center gap-3 text-sm text-slate-700">
+                                      <input
+                                        type="checkbox"
+                                        name="managerIds"
+                                        value={instructor.id}
+                                        defaultChecked={course.courseManagers.some((manager) => manager.user.id === instructor.id)}
+                                      />
+                                      <span>{instructor.fullName} ({instructor.role})</span>
+                                    </label>
+                                    ))
+                                  ) : (
+                                    <p className="text-sm text-slate-600">No active staff available.</p>
+                                  )}
+                                </div>
+                              </label>
+                            </>
                           ) : null}
                           <ImageUploadField
                             label="Course thumbnail"
@@ -313,25 +405,21 @@ export default function CoursesDirectoryPage({
                           <FormField label="Description" name="description" as="textarea" defaultValue={course.description} required />
                         </ApiForm>
                         <div className="flex flex-wrap gap-3">
-                          <ApiActionButton
-                            action={`/api/courses/${course.id}`}
-                            method="PATCH"
-                            payload={{ status: course.status === "ARCHIVED" ? "DRAFT" : "ARCHIVED" }}
-                            successMessage={course.status === "ARCHIVED" ? "Course restored." : "Course archived."}
-                            label={course.status === "ARCHIVED" ? "Restore course" : "Archive course"}
-                            pendingLabel={course.status === "ARCHIVED" ? "Restoring..." : "Archiving..."}
-                            tone={course.status === "ARCHIVED" ? "success" : "default"}
-                          />
-                          <ApiActionButton
-                            action={`/api/courses/${course.id}`}
-                            method="DELETE"
-                            successMessage="Course deleted."
-                            label="Delete course"
-                            pendingLabel="Deleting..."
-                            tone="danger"
-                            confirmMessage={`Delete ${course.title}? This action cannot be undone.`}
-                          />
+                          {session.role === "ADMIN" ? (
+                            <ApiActionButton
+                              action={`/api/courses/${course.id}`}
+                              method="PATCH"
+                              payload={{ status: "ARCHIVED" }}
+                              successMessage="Course archived."
+                              label="Archive course"
+                              pendingLabel="Archiving..."
+                              tone="default"
+                            />
+                          ) : null}
                         </div>
+                        <p className="text-sm text-slate-600">
+                          Permanent deletion is only available from Admin Archives after a course has been archived.
+                        </p>
                       </div>
 
                       <div className="space-y-4">
@@ -347,13 +435,21 @@ export default function CoursesDirectoryPage({
                             label="Student"
                             name="studentId"
                             as="select"
-                            options={students.map((student) => ({
-                              label: `${student.fullName}${student.studentId ? ` (${student.studentId})` : ""}`,
-                              value: student.id,
-                            }))}
+                            options={
+                              loadingSelectorOptions
+                                ? [{ label: "Loading students...", value: "" }]
+                                : selectorOptions.students.map((student) => ({
+                                    label: `${student.fullName}${student.studentId ? ` (${student.studentId})` : ""}`,
+                                    value: student.id,
+                                  }))
+                            }
                             required
+                            disabled={!loadingSelectorOptions && !selectorOptions.students.length}
                           />
                         </ApiForm>
+                        {!loadingSelectorOptions && !selectorOptions.students.length ? (
+                          <p className="text-sm text-slate-600">No active students available to enroll.</p>
+                        ) : null}
                       </div>
                     </div>
 
@@ -366,7 +462,7 @@ export default function CoursesDirectoryPage({
                               <div key={lesson.id} className="rounded-[20px] border border-[#efe6ff] bg-white p-4">
                                 <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
                                   <div>
-                                    <p className="font-semibold text-slate-950">Module {lesson.order}: {lesson.title}</p>
+                                    <p className="font-semibold text-slate-950">{lesson.title}</p>
                                     <p className="mt-1 text-sm text-slate-600">
                                       {lesson.pages.length} page{lesson.pages.length === 1 ? "" : "s"}
                                     </p>
@@ -422,8 +518,9 @@ export default function CoursesDirectoryPage({
               </div>
             </Panel>
           ))}
-        </div>
-      )}
+          </>
+        )}
+      </div>
     </DashboardLayout>
   );
 }
