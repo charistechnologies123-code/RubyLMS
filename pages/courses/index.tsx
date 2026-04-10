@@ -1,6 +1,6 @@
 import type { GetServerSidePropsContext, InferGetServerSidePropsType } from "next";
 import Link from "next/link";
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import ApiActionButton from "@/components/ui/ApiActionButton";
 import DashboardLayout from "@/components/dashboard/DashboardLayout";
 import ApiForm from "@/components/ui/ApiForm";
@@ -68,8 +68,28 @@ export async function getServerSideProps(ctx: GetServerSidePropsContext) {
       },
     });
 
+    const instructors =
+      session.role === "ADMIN"
+        ? await prisma.user.findMany({
+            where: { role: { in: ["ADMIN", "INSTRUCTOR"] }, status: "ACTIVE", archivedAt: null },
+            select: { id: true, fullName: true, role: true },
+            orderBy: { fullName: "asc" },
+          })
+        : [];
+
+    const students =
+      session.role !== "STUDENT"
+        ? await prisma.user.findMany({
+            where: { role: "STUDENT", status: "ACTIVE", archivedAt: null },
+            select: { id: true, fullName: true, studentId: true },
+            orderBy: { fullName: "asc" },
+          })
+        : [];
+
     return {
       courses: serialize(courses),
+      instructors: serialize(instructors),
+      students: serialize(students),
     };
   });
 }
@@ -77,58 +97,12 @@ export async function getServerSideProps(ctx: GetServerSidePropsContext) {
 export default function CoursesDirectoryPage({
   session,
   courses,
+  instructors,
+  students,
 }: InferGetServerSidePropsType<typeof getServerSideProps>) {
   const canManage = session.role !== "STUDENT";
   const [showCreateCourse, setShowCreateCourse] = useState(false);
   const [expandedCourseId, setExpandedCourseId] = useState<string | null>(null);
-  const [selectorOptions, setSelectorOptions] = useState<{
-    students: Array<{ id: string; fullName: string; studentId: string | null }>;
-    instructors: Array<{ id: string; fullName: string; role: string }>;
-  }>({ students: [], instructors: [] });
-  const [loadingSelectorOptions, setLoadingSelectorOptions] = useState(false);
-
-  useEffect(() => {
-    if (!canManage) {
-      return;
-    }
-
-    if (selectorOptions.students.length || selectorOptions.instructors.length || loadingSelectorOptions) {
-      return;
-    }
-
-    let active = true;
-    setLoadingSelectorOptions(true);
-
-    void fetch("/api/course-form-options")
-      .then(async (response) => {
-        const result = await response.json().catch(() => ({}));
-
-        if (!response.ok) {
-          throw new Error(result.error ?? "Unable to load course options.");
-        }
-
-        if (active) {
-          setSelectorOptions({
-            students: result.students ?? [],
-            instructors: result.instructors ?? [],
-          });
-        }
-      })
-      .catch(() => {
-        if (active) {
-          setSelectorOptions({ students: [], instructors: [] });
-        }
-      })
-      .finally(() => {
-        if (active) {
-          setLoadingSelectorOptions(false);
-        }
-      });
-
-    return () => {
-      active = false;
-    };
-  }, [canManage, loadingSelectorOptions, selectorOptions.instructors.length, selectorOptions.students.length]);
 
   return (
     <DashboardLayout
@@ -185,13 +159,8 @@ export default function CoursesDirectoryPage({
                             as="select"
                             defaultValue=""
                             options={[
-                              {
-                                label: loadingSelectorOptions
-                                  ? "Loading instructors..."
-                                  : "No instructor yet",
-                                value: "",
-                              },
-                              ...selectorOptions.instructors.map((instructor) => ({
+                              { label: "No instructor yet", value: "" },
+                              ...instructors.map((instructor) => ({
                                 label: `${instructor.fullName} (${instructor.role})`,
                                 value: instructor.id,
                               })),
@@ -200,9 +169,7 @@ export default function CoursesDirectoryPage({
                           <label className="block md:col-span-2">
                             <span className="text-sm font-semibold text-slate-700">Additional instructors/admins</span>
                             <div className="mt-2 grid gap-2 rounded-[20px] border border-[#e8ddff] bg-white p-4">
-                              {loadingSelectorOptions ? (
-                                <p className="text-sm text-slate-600">Loading staff list...</p>
-                              ) : selectorOptions.instructors.length ? selectorOptions.instructors.map((instructor) => (
+                              {instructors.length ? instructors.map((instructor) => (
                                 <label key={instructor.id} className="flex items-center gap-3 text-sm text-slate-700">
                                   <input type="checkbox" name="managerIds" value={instructor.id} />
                                   <span>{instructor.fullName} ({instructor.role})</span>
@@ -357,13 +324,8 @@ export default function CoursesDirectoryPage({
                                 as="select"
                                 defaultValue={course.instructor?.id ?? ""}
                                 options={[
-                                  {
-                                    label: loadingSelectorOptions
-                                      ? "Loading instructors..."
-                                      : "No instructor yet",
-                                    value: "",
-                                  },
-                                  ...selectorOptions.instructors.map((instructor) => ({
+                                  { label: "No instructor yet", value: "" },
+                                  ...instructors.map((instructor) => ({
                                     label: `${instructor.fullName} (${instructor.role})`,
                                     value: instructor.id,
                                   })),
@@ -372,10 +334,8 @@ export default function CoursesDirectoryPage({
                               <label className="block">
                                 <span className="text-sm font-semibold text-slate-700">Additional instructors/admins</span>
                                 <div className="mt-2 grid gap-2 rounded-[20px] border border-[#e8ddff] bg-white p-4">
-                                  {loadingSelectorOptions ? (
-                                    <p className="text-sm text-slate-600">Loading staff list...</p>
-                                  ) : selectorOptions.instructors.length ? (
-                                    selectorOptions.instructors.map((instructor) => (
+                                  {instructors.length ? (
+                                    instructors.map((instructor) => (
                                     <label key={instructor.id} className="flex items-center gap-3 text-sm text-slate-700">
                                       <input
                                         type="checkbox"
@@ -435,19 +395,15 @@ export default function CoursesDirectoryPage({
                             label="Student"
                             name="studentId"
                             as="select"
-                            options={
-                              loadingSelectorOptions
-                                ? [{ label: "Loading students...", value: "" }]
-                                : selectorOptions.students.map((student) => ({
-                                    label: `${student.fullName}${student.studentId ? ` (${student.studentId})` : ""}`,
-                                    value: student.id,
-                                  }))
-                            }
+                            options={students.map((student) => ({
+                              label: `${student.fullName}${student.studentId ? ` (${student.studentId})` : ""}`,
+                              value: student.id,
+                            }))}
                             required
-                            disabled={!loadingSelectorOptions && !selectorOptions.students.length}
+                            disabled={!students.length}
                           />
                         </ApiForm>
-                        {!loadingSelectorOptions && !selectorOptions.students.length ? (
+                        {!students.length ? (
                           <p className="text-sm text-slate-600">No active students available to enroll.</p>
                         ) : null}
                       </div>

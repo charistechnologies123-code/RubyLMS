@@ -34,7 +34,7 @@ export default function Sidebar({
       )}
 
       <aside
-        className={`fixed left-0 top-0 z-50 flex h-full flex-col border-r border-white/70 bg-[#12031f] px-3 py-4 text-white shadow-[0_20px_80px_rgba(0,0,0,0.35)] transition-all duration-300 ${
+        className={`fixed left-0 top-0 z-50 flex h-full flex-col overflow-y-auto border-r border-white/70 bg-[#12031f] px-3 py-4 text-white shadow-[0_20px_80px_rgba(0,0,0,0.35)] transition-all duration-300 ${
           collapsed ? "w-24" : "w-72"
         } ${mobileOpen ? "translate-x-0" : "-translate-x-full"} md:translate-x-0`}
       >
@@ -57,7 +57,7 @@ export default function Sidebar({
           )}
         </div>
 
-        <nav className="flex-1 space-y-2">
+        <nav className="flex-1 space-y-2 overflow-y-auto pb-4">
           {navItems.map((item) => {
             const Icon = item.icon;
             const isActive =
