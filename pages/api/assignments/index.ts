@@ -7,6 +7,14 @@ import { getVisibleAssignmentWhere } from "@/lib/lms";
 import { normalizeFileInput } from "@/lib/media";
 import { canManageCourse } from "@/lib/permissions";
 
+export const config = {
+  api: {
+    bodyParser: {
+      sizeLimit: "8mb",
+    },
+  },
+};
+
 async function handler(req: AuthedNextApiRequest, res: NextApiResponse) {
   if (req.method === "GET") {
     const assignments = await prisma.assignment.findMany({

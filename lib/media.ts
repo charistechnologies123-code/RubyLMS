@@ -7,6 +7,38 @@ function getMimeTypeFromDataUrl(value: string) {
   return match?.[1]?.toLowerCase() ?? null;
 }
 
+function getDataUrlFileExtension(mimeType: string | null) {
+  if (!mimeType) {
+    return null;
+  }
+
+  if (mimeType === "application/pdf") {
+    return "pdf";
+  }
+
+  if (mimeType === "application/msword") {
+    return "doc";
+  }
+
+  if (mimeType === "application/vnd.openxmlformats-officedocument.wordprocessingml.document") {
+    return "docx";
+  }
+
+  if (mimeType === "text/plain") {
+    return "txt";
+  }
+
+  if (mimeType === "text/csv" || mimeType === "application/csv") {
+    return "csv";
+  }
+
+  if (mimeType.startsWith("image/")) {
+    return mimeType.split("/")[1] ?? "image";
+  }
+
+  return null;
+}
+
 function getYouTubeVideoId(url: URL) {
   const hostname = url.hostname.toLowerCase().replace(/^www\./, "");
 
@@ -176,12 +208,15 @@ export function getFileDisplayMeta(value?: string | null) {
                 : mimeType?.startsWith("image/")
                   ? "Uploaded image"
                   : "Uploaded file";
+    const extension = getDataUrlFileExtension(mimeType);
 
     return {
       href: value,
       label: typeLabel,
       mimeType,
+      extension,
       isImage: Boolean(mimeType?.startsWith("image/")),
+      isPdf: mimeType === "application/pdf",
       isDataUrl: true,
     };
   }
@@ -197,7 +232,9 @@ export function getFileDisplayMeta(value?: string | null) {
         href: value,
         label: normalizedName || "External file",
         mimeType: extension ? `.${extension}` : null,
+        extension,
         isImage: Boolean(extension && ["png", "jpg", "jpeg", "webp", "gif"].includes(extension)),
+        isPdf: extension === "pdf",
         isDataUrl: false,
       };
     } catch {
@@ -205,7 +242,9 @@ export function getFileDisplayMeta(value?: string | null) {
         href: value,
         label: "External file",
         mimeType: null,
+        extension: null,
         isImage: false,
+        isPdf: false,
         isDataUrl: false,
       };
     }
@@ -215,7 +254,9 @@ export function getFileDisplayMeta(value?: string | null) {
     href: value,
     label: "File",
     mimeType: null,
+    extension: null,
     isImage: false,
+    isPdf: false,
     isDataUrl: false,
   };
 }

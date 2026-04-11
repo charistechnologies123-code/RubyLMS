@@ -22,7 +22,14 @@ export default function FileDisplay({ url, title, className = "" }: FileDisplayP
         <img
           src={file.href}
           alt={title || file.label}
-          className="max-h-48 w-full max-w-sm rounded-[20px] border border-[#efe6ff] object-cover"
+          className="max-h-80 w-full max-w-2xl rounded-[20px] border border-[#efe6ff] bg-white object-contain"
+        />
+      ) : null}
+      {file.isPdf ? (
+        <iframe
+          src={file.href}
+          title={title || file.label}
+          className="h-[28rem] w-full max-w-3xl rounded-[20px] border border-[#efe6ff] bg-white"
         />
       ) : null}
       <a
@@ -31,7 +38,7 @@ export default function FileDisplay({ url, title, className = "" }: FileDisplayP
         rel="noreferrer"
         className="inline-flex rounded-2xl border border-[#e8ddff] bg-[#faf7ff] px-4 py-3 text-sm font-semibold text-[#6b00ff]"
       >
-        {file.isDataUrl ? `Open ${file.label}` : `Open ${file.label}`}
+        {file.isPdf ? "Open PDF in new tab" : `Open ${file.label}`}
       </a>
       <p className="text-sm text-slate-600">{file.label}</p>
     </div>
