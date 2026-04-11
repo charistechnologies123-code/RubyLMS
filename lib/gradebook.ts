@@ -167,7 +167,7 @@ export async function syncCourseGradebook(courseId: string) {
 export async function createGradebookColumn(args: {
   courseId: string;
   title: string;
-  type?: "CUSTOM" | "ATTENDANCE";
+  type?: "CUSTOM" | "ATTENDANCE" | "QUIZ" | "ASSIGNMENT";
   maxScore?: number | null;
   createdById?: string | null;
 }) {

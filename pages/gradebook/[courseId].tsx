@@ -138,6 +138,8 @@ export default function CourseGradebookPage({
                 options={[
                   { label: "Custom", value: "CUSTOM" },
                   { label: "Attendance", value: "ATTENDANCE" },
+                  { label: "Quiz", value: "QUIZ" },
+                  { label: "Assignment", value: "ASSIGNMENT" },
                 ]}
               />
               <FormField label="Maximum score" name="maxScore" type="number" placeholder="100" />

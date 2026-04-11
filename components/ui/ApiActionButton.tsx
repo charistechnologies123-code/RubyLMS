@@ -15,6 +15,7 @@ type ApiActionButtonProps = {
   confirmMessage?: string;
   disabled?: boolean;
   tone?: "default" | "danger" | "success";
+  redirectTo?: string;
 };
 
 export default function ApiActionButton({
@@ -27,6 +28,7 @@ export default function ApiActionButton({
   confirmMessage,
   disabled = false,
   tone = "default",
+  redirectTo,
 }: ApiActionButtonProps) {
   const router = useRouter();
   const { confirm } = useConfirmDialog();
@@ -68,6 +70,11 @@ export default function ApiActionButton({
 
     toast.success(successMessage);
     setLoading(false);
+    if (redirectTo) {
+      await router.push(redirectTo);
+      return;
+    }
+
     router.replace(router.asPath);
   }
 

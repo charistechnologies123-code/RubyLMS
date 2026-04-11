@@ -138,6 +138,7 @@ export default function GradebookColumnPage({
               pendingLabel="Deleting..."
               tone="danger"
               confirmMessage={`Delete ${column.title}? This will remove all scores in this column.`}
+              redirectTo={`/gradebook/${column.course.id}`}
             />
 
             <Link

@@ -12,7 +12,7 @@ async function handler(req: AuthedNextApiRequest, res: NextApiResponse) {
   const courseId = String(req.query.courseId ?? "");
   const { title, type, maxScore } = req.body as {
     title?: string;
-    type?: "CUSTOM" | "ATTENDANCE";
+    type?: "CUSTOM" | "ATTENDANCE" | "QUIZ" | "ASSIGNMENT";
     maxScore?: string;
   };
 
@@ -34,7 +34,10 @@ async function handler(req: AuthedNextApiRequest, res: NextApiResponse) {
   const column = await createGradebookColumn({
     courseId,
     title: title.trim(),
-    type: type === "ATTENDANCE" ? "ATTENDANCE" : "CUSTOM",
+    type:
+      type === "ATTENDANCE" || type === "QUIZ" || type === "ASSIGNMENT"
+        ? type
+        : "CUSTOM",
     maxScore: maxScore?.length ? Number(maxScore) : null,
     createdById: req.session.userId,
   });
