@@ -2,6 +2,7 @@
 import type { GetServerSidePropsContext, GetServerSidePropsResult } from "next";
 import Link from "next/link";
 import { useState } from "react";
+import toast from "react-hot-toast";
 import DashboardLayout from "@/components/dashboard/DashboardLayout";
 import ApiForm from "@/components/ui/ApiForm";
 import ApiActionButton from "@/components/ui/ApiActionButton";
@@ -16,6 +17,7 @@ import QuizBuilderField from "@/components/ui/QuizBuilderField";
 import { getManagedCourseWhere } from "@/lib/courseManagers";
 import { assertRoleAccess, getDefaultRouteForRole, getSessionFromPageContext } from "@/lib/auth";
 import { formatDate, formatShortDate } from "@/lib/format";
+import { canStudentSubmitBeforeDueDate } from "@/lib/lms";
 import { canManageCourse } from "@/lib/permissions";
 import { prisma } from "@/lib/prisma";
 import { serialize } from "@/lib/serialize";
@@ -320,6 +322,8 @@ export default function CourseWorkspacePage({
         textSubmission: string | null;
         linkUrl: string | null;
         fileUrl: string | null;
+        submittedAt: string;
+        gradedAt: string | null;
         student: {
           fullName: string;
           studentId: string | null;
@@ -808,11 +812,16 @@ export default function CourseWorkspacePage({
                       <div className="space-y-4">
                         <button
                           type="button"
-                          onClick={() =>
+                          onClick={() => {
+                            if (!canStudentSubmitBeforeDueDate(assignment.dueAt ? new Date(assignment.dueAt) : null)) {
+                              toast.error("The due date for this assignment has passed.");
+                              return;
+                            }
+
                             setActiveSubmissionAssignmentId((currentAssignmentId) =>
                               currentAssignmentId === assignment.id ? null : assignment.id,
-                            )
-                          }
+                            );
+                          }}
                           className={`rounded-2xl px-4 py-3 text-sm font-semibold transition ${
                             activeSubmissionAssignmentId === assignment.id
                               ? "bg-[linear-gradient(135deg,#6b00ff,#8c3cff)] text-white"
@@ -826,7 +835,12 @@ export default function CourseWorkspacePage({
                               : "Start Submission"}
                         </button>
 
-                        {activeSubmissionAssignmentId === assignment.id ? (
+                        {!canStudentSubmitBeforeDueDate(assignment.dueAt ? new Date(assignment.dueAt) : null) ? (
+                          <p className="text-sm text-[#b42318]">This assignment is closed because the due date has passed.</p>
+                        ) : null}
+
+                        {activeSubmissionAssignmentId === assignment.id &&
+                        canStudentSubmitBeforeDueDate(assignment.dueAt ? new Date(assignment.dueAt) : null) ? (
                           <div className="rounded-[24px] border border-[#e8ddff] bg-[#fcfaff] p-5">
                             <ApiForm
                               action="/api/assignments/submit"
@@ -861,6 +875,8 @@ export default function CourseWorkspacePage({
                                 <div>
                                   <p className="font-semibold text-slate-950">{submission.student.fullName}</p>
                                   <p className="text-sm text-slate-600">{submission.student.studentId ?? "No ID"}</p>
+                                  <p className="mt-1 text-sm text-slate-600">Submitted {formatDate(submission.submittedAt)}</p>
+                                  {submission.gradedAt ? <p className="mt-1 text-sm text-slate-600">Graded {formatDate(submission.gradedAt)}</p> : null}
                                   {submission.textSubmission ? <p className="mt-2 text-sm text-slate-600">{submission.textSubmission}</p> : null}
                                   {submission.linkUrl ? (
                                     <a href={submission.linkUrl} target="_blank" rel="noreferrer" className="mt-2 inline-flex text-sm font-semibold text-[#6b00ff]">

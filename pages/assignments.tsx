@@ -1,5 +1,6 @@
 import type { GetServerSidePropsContext, InferGetServerSidePropsType } from "next";
 import { useState } from "react";
+import toast from "react-hot-toast";
 import DashboardLayout from "@/components/dashboard/DashboardLayout";
 import ApiForm from "@/components/ui/ApiForm";
 import Badge from "@/components/ui/Badge";
@@ -8,8 +9,8 @@ import FileDisplay from "@/components/ui/FileDisplay";
 import FileUploadField from "@/components/ui/FileUploadField";
 import FormField from "@/components/ui/FormField";
 import Panel from "@/components/ui/Panel";
-import { formatShortDate } from "@/lib/format";
-import { getVisibleAssignmentWhere, getVisibleCourseWhere } from "@/lib/lms";
+import { formatDate, formatShortDate } from "@/lib/format";
+import { canStudentSubmitBeforeDueDate, getVisibleAssignmentWhere, getVisibleCourseWhere } from "@/lib/lms";
 import { requirePageAuth } from "@/lib/pageAuth";
 import { prisma } from "@/lib/prisma";
 import { serialize } from "@/lib/serialize";
@@ -61,9 +62,18 @@ export default function AssignmentsPage({
   courses,
   assignments,
 }: InferGetServerSidePropsType<typeof getServerSideProps>) {
+  function toDateTimeLocalValue(value?: string | Date | null) {
+    if (!value) {
+      return "";
+    }
+
+    return new Date(value).toISOString().slice(0, 16);
+  }
+
   const canManage = session.role !== "STUDENT";
   const [showCreateAssignment, setShowCreateAssignment] = useState(false);
   const [activeSubmissionAssignmentId, setActiveSubmissionAssignmentId] = useState<string | null>(null);
+  const [activeEditAssignmentId, setActiveEditAssignmentId] = useState<string | null>(null);
   const managedAssignments = assignments as Array<
     (typeof assignments)[number] & {
       submissions: Array<{
@@ -73,6 +83,8 @@ export default function AssignmentsPage({
         textSubmission: string | null;
         linkUrl: string | null;
         fileUrl: string | null;
+        submittedAt: string;
+        gradedAt: string | null;
         student: {
           fullName: string;
           studentId: string | null;
@@ -193,11 +205,16 @@ export default function AssignmentsPage({
                   <div className="space-y-4">
                     <button
                       type="button"
-                      onClick={() =>
+                      onClick={() => {
+                        if (!canStudentSubmitBeforeDueDate(assignment.dueAt ? new Date(assignment.dueAt) : null)) {
+                          toast.error("The due date for this assignment has passed.");
+                          return;
+                        }
+
                         setActiveSubmissionAssignmentId((currentAssignmentId) =>
                           currentAssignmentId === assignment.id ? null : assignment.id,
-                        )
-                      }
+                        );
+                      }}
                       className={`rounded-2xl px-4 py-3 text-sm font-semibold transition ${
                         activeSubmissionAssignmentId === assignment.id
                           ? "bg-[linear-gradient(135deg,#6b00ff,#8c3cff)] text-white"
@@ -211,7 +228,12 @@ export default function AssignmentsPage({
                           : "Start Submission"}
                     </button>
 
-                    {activeSubmissionAssignmentId === assignment.id ? (
+                    {!canStudentSubmitBeforeDueDate(assignment.dueAt ? new Date(assignment.dueAt) : null) ? (
+                      <p className="text-sm text-[#b42318]">This assignment is closed because the due date has passed.</p>
+                    ) : null}
+
+                    {activeSubmissionAssignmentId === assignment.id &&
+                    canStudentSubmitBeforeDueDate(assignment.dueAt ? new Date(assignment.dueAt) : null) ? (
                       <div className="rounded-[24px] border border-[#e8ddff] bg-[#fcfaff] p-5">
                         <ApiForm
                           action="/api/assignments/submit"
@@ -235,6 +257,76 @@ export default function AssignmentsPage({
                 </div>
               ) : (
                 <div className="mt-5 space-y-3">
+                  <div className="flex flex-wrap gap-3">
+                    <button
+                      type="button"
+                      onClick={() =>
+                        setActiveEditAssignmentId((currentAssignmentId) =>
+                          currentAssignmentId === assignment.id ? null : assignment.id,
+                        )
+                      }
+                      className={`rounded-2xl px-4 py-3 text-sm font-semibold transition ${
+                        activeEditAssignmentId === assignment.id
+                          ? "bg-[linear-gradient(135deg,#6b00ff,#8c3cff)] text-white"
+                          : "border border-[#e8ddff] bg-white text-[#6b00ff]"
+                      }`}
+                    >
+                      {activeEditAssignmentId === assignment.id ? "Close Assignment Editor" : "Edit Assignment"}
+                    </button>
+                  </div>
+
+                  {activeEditAssignmentId === assignment.id ? (
+                    <div className="rounded-[24px] border border-[#e8ddff] bg-[#fcfaff] p-5">
+                      <ApiForm
+                        action={`/api/assignments/${assignment.id}`}
+                        method="PATCH"
+                        submitLabel="Save assignment"
+                        successMessage="Assignment updated."
+                        className="grid gap-4 md:grid-cols-2"
+                        resetOnSuccess={false}
+                        onSuccess={() => setActiveEditAssignmentId(null)}
+                      >
+                        <FormField label="Title" name="title" defaultValue={assignment.title} required />
+                        <FormField
+                          label="Submission type"
+                          name="submissionType"
+                          as="select"
+                          defaultValue={assignment.submissionType}
+                          options={[
+                            { label: "File", value: "FILE" },
+                            { label: "Link", value: "LINK" },
+                            { label: "Text", value: "TEXT" },
+                          ]}
+                        />
+                        <FormField
+                          label="Status"
+                          name="status"
+                          as="select"
+                          defaultValue={assignment.status}
+                          options={[
+                            { label: "Draft", value: "DRAFT" },
+                            { label: "Published", value: "PUBLISHED" },
+                          ]}
+                        />
+                        <FormField label="Due date" name="dueAt" type="datetime-local" defaultValue={toDateTimeLocalValue(assignment.dueAt)} />
+                        <div className="md:col-span-2">
+                          <FormField label="Description" name="description" as="textarea" defaultValue={assignment.description} required />
+                        </div>
+                        <div className="md:col-span-2">
+                          <FormField label="Instructions" name="instructions" as="textarea" defaultValue={assignment.instructions ?? ""} />
+                        </div>
+                        <div className="md:col-span-2">
+                          <FileUploadField
+                            label="Assignment attachment"
+                            name="attachmentUrl"
+                            defaultValue={assignment.attachmentUrl ?? ""}
+                            helperText="Upload a PDF, DOC, DOCX, TXT, CSV, or image."
+                          />
+                        </div>
+                      </ApiForm>
+                    </div>
+                  ) : null}
+
                   {!assignment.submissions.length ? (
                     <EmptyState title="No submissions yet" description="Submissions will appear here after students respond." />
                   ) : (
@@ -254,6 +346,8 @@ export default function AssignmentsPage({
                           <div>
                             <p className="font-semibold text-slate-950">{gradedSubmission.student.fullName}</p>
                             <p className="text-sm text-slate-600">{gradedSubmission.student.studentId ?? "No ID"}</p>
+                            <p className="mt-1 text-sm text-slate-600">Submitted {formatDate(submission.submittedAt)}</p>
+                            {submission.gradedAt ? <p className="mt-1 text-sm text-slate-600">Graded {formatDate(submission.gradedAt)}</p> : null}
                             {submission.textSubmission ? <p className="mt-2 text-sm text-slate-600">{submission.textSubmission}</p> : null}
                             {submission.linkUrl ? (
                               <a href={submission.linkUrl} target="_blank" rel="noreferrer" className="mt-2 inline-flex text-sm font-semibold text-[#6b00ff]">
