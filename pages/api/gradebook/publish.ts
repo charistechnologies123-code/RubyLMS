@@ -2,7 +2,6 @@ import type { NextApiResponse } from "next";
 import { prisma } from "@/lib/prisma";
 import { withApiAuth, type AuthedNextApiRequest } from "@/lib/api";
 import { getManagedCourseWhere } from "@/lib/courseManagers";
-import { syncCourseGradebook } from "@/lib/gradebook";
 
 async function handler(req: AuthedNextApiRequest, res: NextApiResponse) {
   if (req.method !== "PATCH") {
@@ -28,8 +27,6 @@ async function handler(req: AuthedNextApiRequest, res: NextApiResponse) {
   if (!course) {
     return res.status(404).json({ error: "Course not found." });
   }
-
-  await syncCourseGradebook(courseId);
 
   const nextPublished = published === true || published === "true";
 

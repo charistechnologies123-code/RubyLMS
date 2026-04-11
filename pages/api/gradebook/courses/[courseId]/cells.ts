@@ -35,9 +35,6 @@ async function handler(req: AuthedNextApiRequest, res: NextApiResponse) {
   const editableColumns = await prisma.gradebookColumn.findMany({
     where: {
       courseId,
-      type: {
-        in: ["ATTENDANCE", "CUSTOM"],
-      },
     },
     select: {
       id: true,

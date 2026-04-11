@@ -121,281 +121,44 @@ export function parseGradeCsv(csv: string) {
   });
 }
 
-function calculateQuizMaxScore(quiz: {
-  totalMarks: number | null;
-  quizQuestions: Array<{ marksOverride: number | null; questionBank: { marks: number } }>;
-}) {
-  if (typeof quiz.totalMarks === "number") {
-    return quiz.totalMarks;
-  }
+async function getEnrolledStudentIds(courseId: string) {
+  const enrollments = await prisma.enrollment.findMany({
+    where: { courseId },
+    select: { studentId: true },
+  });
 
-  return quiz.quizQuestions.reduce(
-    (total, question) => total + (question.marksOverride ?? question.questionBank.marks ?? 1),
-    0,
-  );
-}
-
-function buildSummaryMap<T extends { studentId: string }>(items: T[]) {
-  const grouped = new Map<string, T[]>();
-
-  for (const item of items) {
-    const existing = grouped.get(item.studentId) ?? [];
-    existing.push(item);
-    grouped.set(item.studentId, existing);
-  }
-
-  return grouped;
+  return enrollments.map((enrollment) => enrollment.studentId);
 }
 
 export async function syncCourseGradebook(courseId: string) {
-  const [
-    enrollments,
-    quizzes,
-    assignments,
-    legacyEntries,
-    existingColumns,
-  ] = await Promise.all([
-    prisma.enrollment.findMany({
-      where: { courseId },
-      include: {
-        student: {
-          select: {
-            id: true,
-            fullName: true,
-            studentId: true,
-          },
-        },
-      },
-      orderBy: { student: { fullName: "asc" } },
-    }),
-    prisma.quiz.findMany({
-      where: { courseId },
-      include: {
-        quizQuestions: {
-          include: {
-            questionBank: {
-              select: {
-                marks: true,
-              },
-            },
-          },
-        },
-        attempts: {
-          where: { isSubmitted: true },
-          orderBy: [{ studentId: "asc" }, { score: "desc" }, { submittedAt: "desc" }],
-        },
-      },
-      orderBy: { createdAt: "asc" },
-    }),
-    prisma.assignment.findMany({
-      where: { courseId },
-      include: {
-        submissions: {
-          where: {
-            score: {
-              not: null,
-            },
-          },
-          orderBy: { submittedAt: "desc" },
-        },
-      },
-      orderBy: { createdAt: "asc" },
-    }),
-    prisma.gradebookEntry.findMany({
-      where: {
-        courseId,
-        sourceType: "MANUAL",
-      },
-      orderBy: [{ title: "asc" }, { studentId: "asc" }],
-    }),
+  const [columns, studentIds] = await Promise.all([
     prisma.gradebookColumn.findMany({
       where: { courseId },
-      include: {
-        cells: true,
-      },
-      orderBy: { order: "asc" },
+      include: { cells: true },
     }),
+    getEnrolledStudentIds(courseId),
   ]);
 
-  const studentIds = enrollments.map((enrollment) => enrollment.studentId);
-  const existingColumnByKey = new Map(existingColumns.map((column) => [column.key, column]));
-  const legacyByTitle = new Map<string, (typeof legacyEntries)>();
-
-  for (const entry of legacyEntries) {
-    const entries = legacyByTitle.get(entry.title) ?? [];
-    entries.push(entry);
-    legacyByTitle.set(entry.title, entries);
+  if (!columns.length || !studentIds.length) {
+    return;
   }
 
-  const plannedColumns = [
-    {
-      key: buildColumnKey("ATTENDANCE", "Attendance"),
-      title: "Attendance",
-      type: "ATTENDANCE" as const,
-      sourceId: null,
-      maxScore: existingColumnByKey.get(buildColumnKey("ATTENDANCE", "Attendance"))?.maxScore ?? 100,
-    },
-    ...quizzes.map((quiz) => ({
-      key: buildColumnKey("QUIZ", quiz.title, quiz.id),
-      title: quiz.title,
-      type: "QUIZ" as const,
-      sourceId: quiz.id,
-      maxScore: calculateQuizMaxScore(quiz),
-    })),
-    ...assignments.map((assignment) => ({
-      key: buildColumnKey("ASSIGNMENT", assignment.title, assignment.id),
-      title: assignment.title,
-      type: "ASSIGNMENT" as const,
-      sourceId: assignment.id,
-      maxScore:
-        existingColumnByKey.get(buildColumnKey("ASSIGNMENT", assignment.title, assignment.id))?.maxScore ?? null,
-    })),
-    ...Array.from(legacyByTitle.entries()).map(([title, entries]) => ({
-      key: buildColumnKey("CUSTOM", title),
-      title,
-      type: "CUSTOM" as const,
-      sourceId: null,
-      maxScore: entries.find((entry) => typeof entry.maxScore === "number")?.maxScore ?? null,
-    })),
-  ];
-
-  let nextOrder = existingColumns.reduce((maxOrder, column) => Math.max(maxOrder, column.order), 0);
-
   await prisma.$transaction(async (tx) => {
-    for (const plannedColumn of plannedColumns) {
-      const existingColumn = existingColumnByKey.get(plannedColumn.key);
-
-      if (existingColumn) {
-        await tx.gradebookColumn.update({
-          where: { id: existingColumn.id },
-          data: {
-            title: plannedColumn.title,
-            type: plannedColumn.type,
-            sourceId: plannedColumn.sourceId,
-            maxScore: plannedColumn.maxScore ?? existingColumn.maxScore,
-          },
-        });
-        continue;
-      }
-
-      nextOrder += 1;
-
-      const createdColumn = await tx.gradebookColumn.create({
-        data: {
-          courseId,
-          createdById: null,
-          key: plannedColumn.key,
-          title: plannedColumn.title,
-          type: plannedColumn.type,
-          sourceId: plannedColumn.sourceId,
-          order: nextOrder,
-          maxScore: plannedColumn.maxScore,
-        },
-      });
-
-      existingColumnByKey.set(plannedColumn.key, {
-        ...createdColumn,
-        cells: [],
-      } as typeof existingColumns[number]);
-    }
-
-    const columns = await tx.gradebookColumn.findMany({
-      where: { courseId },
-      include: { cells: true },
-      orderBy: { order: "asc" },
-    });
-
     for (const column of columns) {
-      const existingCellByStudent = new Map(column.cells.map((cell) => [cell.studentId, cell]));
+      const existingStudentIds = new Set(column.cells.map((cell) => cell.studentId));
 
       for (const studentId of studentIds) {
-        if (!existingCellByStudent.has(studentId)) {
-          const createdCell = await tx.gradebookCell.create({
-            data: {
-              courseId,
-              columnId: column.id,
-              studentId,
-            },
-          });
-          existingCellByStudent.set(studentId, createdCell);
-        }
-      }
-
-      if (column.type === "QUIZ" && column.sourceId) {
-        const quiz = quizzes.find((item) => item.id === column.sourceId);
-
-        if (!quiz) {
+        if (existingStudentIds.has(studentId)) {
           continue;
         }
 
-        const attemptsByStudent = buildSummaryMap(quiz.attempts);
-
-        for (const studentId of studentIds) {
-          const attempts = attemptsByStudent.get(studentId) ?? [];
-          const existingCell = existingCellByStudent.get(studentId);
-          const selectedAttempt =
-            attempts.find((attempt) => attempt.id === existingCell?.selectedQuizAttemptId) ?? attempts[0] ?? null;
-
-          await tx.gradebookCell.update({
-            where: {
-              columnId_studentId: {
-                columnId: column.id,
-                studentId,
-              },
-            },
-            data: {
-              score: selectedAttempt?.score ?? null,
-              selectedQuizAttemptId: selectedAttempt?.id ?? null,
-              selectedAssignmentSubmissionId: null,
-            },
-          });
-        }
-      }
-
-      if (column.type === "ASSIGNMENT" && column.sourceId) {
-        const assignment = assignments.find((item) => item.id === column.sourceId);
-
-        if (!assignment) {
-          continue;
-        }
-
-        const submissionByStudent = new Map(assignment.submissions.map((submission) => [submission.studentId, submission]));
-
-        for (const studentId of studentIds) {
-          const submission = submissionByStudent.get(studentId) ?? null;
-
-          await tx.gradebookCell.update({
-            where: {
-              columnId_studentId: {
-                columnId: column.id,
-                studentId,
-              },
-            },
-            data: {
-              score: submission?.score ?? null,
-              selectedQuizAttemptId: null,
-              selectedAssignmentSubmissionId: submission?.id ?? null,
-            },
-          });
-        }
-      }
-
-      if (column.type === "CUSTOM") {
-        const legacyRows = legacyByTitle.get(column.title) ?? [];
-
-        for (const row of legacyRows) {
-          await tx.gradebookCell.update({
-            where: {
-              columnId_studentId: {
-                columnId: column.id,
-                studentId: row.studentId,
-              },
-            },
-            data: {
-              score: row.score,
-            },
-          });
-        }
+        await tx.gradebookCell.create({
+          data: {
+            courseId,
+            columnId: column.id,
+            studentId,
+          },
+        });
       }
     }
   });
@@ -435,21 +198,150 @@ export async function createGradebookColumn(args: {
     },
   });
 
-  const enrollments = await prisma.enrollment.findMany({
-    where: { courseId: args.courseId },
-    select: { studentId: true },
-  });
+  const studentIds = await getEnrolledStudentIds(args.courseId);
 
-  if (enrollments.length) {
+  if (studentIds.length) {
     await prisma.gradebookCell.createMany({
-      data: enrollments.map((enrollment) => ({
+      data: studentIds.map((studentId) => ({
         courseId: args.courseId,
         columnId: column.id,
-        studentId: enrollment.studentId,
+        studentId,
       })),
       skipDuplicates: true,
     });
   }
 
   return column;
+}
+
+export async function importGradebookColumnFromQuiz(args: {
+  courseId: string;
+  columnId: string;
+  quizId: string;
+}) {
+  const [studentIds, attempts] = await Promise.all([
+    getEnrolledStudentIds(args.courseId),
+    prisma.quizAttempt.findMany({
+      where: {
+        quizId: args.quizId,
+        isSubmitted: true,
+      },
+      orderBy: [{ studentId: "asc" }, { score: "desc" }, { submittedAt: "desc" }],
+    }),
+  ]);
+
+  const bestAttemptByStudent = new Map<string, (typeof attempts)[number]>();
+
+  for (const attempt of attempts) {
+    if (!bestAttemptByStudent.has(attempt.studentId)) {
+      bestAttemptByStudent.set(attempt.studentId, attempt);
+    }
+  }
+
+  await prisma.$transaction(async (tx) => {
+    for (const studentId of studentIds) {
+      const attempt = bestAttemptByStudent.get(studentId) ?? null;
+
+      await tx.gradebookCell.upsert({
+        where: {
+          columnId_studentId: {
+            columnId: args.columnId,
+            studentId,
+          },
+        },
+        update: {
+          score: attempt?.score ?? null,
+          selectedQuizAttemptId: attempt?.id ?? null,
+          selectedAssignmentSubmissionId: null,
+        },
+        create: {
+          courseId: args.courseId,
+          columnId: args.columnId,
+          studentId,
+          score: attempt?.score ?? null,
+          selectedQuizAttemptId: attempt?.id ?? null,
+        },
+      });
+    }
+  });
+}
+
+export async function importGradebookColumnFromAssignment(args: {
+  courseId: string;
+  columnId: string;
+  assignmentId: string;
+}) {
+  const [studentIds, submissions] = await Promise.all([
+    getEnrolledStudentIds(args.courseId),
+    prisma.assignmentSubmission.findMany({
+      where: {
+        assignmentId: args.assignmentId,
+        score: {
+          not: null,
+        },
+      },
+      orderBy: [{ studentId: "asc" }, { gradedAt: "desc" }, { submittedAt: "desc" }],
+    }),
+  ]);
+
+  const bestSubmissionByStudent = new Map<string, (typeof submissions)[number]>();
+
+  for (const submission of submissions) {
+    if (!bestSubmissionByStudent.has(submission.studentId)) {
+      bestSubmissionByStudent.set(submission.studentId, submission);
+    }
+  }
+
+  await prisma.$transaction(async (tx) => {
+    for (const studentId of studentIds) {
+      const submission = bestSubmissionByStudent.get(studentId) ?? null;
+
+      await tx.gradebookCell.upsert({
+        where: {
+          columnId_studentId: {
+            columnId: args.columnId,
+            studentId,
+          },
+        },
+        update: {
+          score: submission?.score ?? null,
+          selectedQuizAttemptId: null,
+          selectedAssignmentSubmissionId: submission?.id ?? null,
+        },
+        create: {
+          courseId: args.courseId,
+          columnId: args.columnId,
+          studentId,
+          score: submission?.score ?? null,
+          selectedAssignmentSubmissionId: submission?.id ?? null,
+        },
+      });
+    }
+  });
+}
+
+export async function clearGradebookStudentScore(args: {
+  courseId: string;
+  columnId: string;
+  studentId: string;
+}) {
+  await prisma.gradebookCell.upsert({
+    where: {
+      columnId_studentId: {
+        columnId: args.columnId,
+        studentId: args.studentId,
+      },
+    },
+    update: {
+      score: null,
+      selectedQuizAttemptId: null,
+      selectedAssignmentSubmissionId: null,
+    },
+    create: {
+      courseId: args.courseId,
+      columnId: args.columnId,
+      studentId: args.studentId,
+      score: null,
+    },
+  });
 }

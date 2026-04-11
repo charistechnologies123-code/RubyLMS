@@ -1,4 +1,5 @@
 import type { GetServerSidePropsContext, InferGetServerSidePropsType } from "next";
+import Link from "next/link";
 import { useState } from "react";
 import toast from "react-hot-toast";
 import DashboardLayout from "@/components/dashboard/DashboardLayout";
@@ -74,24 +75,6 @@ export default function AssignmentsPage({
   const [showCreateAssignment, setShowCreateAssignment] = useState(false);
   const [activeSubmissionAssignmentId, setActiveSubmissionAssignmentId] = useState<string | null>(null);
   const [activeEditAssignmentId, setActiveEditAssignmentId] = useState<string | null>(null);
-  const managedAssignments = assignments as Array<
-    (typeof assignments)[number] & {
-      submissions: Array<{
-        id: string;
-        score: number | null;
-        feedback: string | null;
-        textSubmission: string | null;
-        linkUrl: string | null;
-        fileUrl: string | null;
-        submittedAt: string;
-        gradedAt: string | null;
-        student: {
-          fullName: string;
-          studentId: string | null;
-        };
-      }>;
-    }
-  >;
 
   return (
     <DashboardLayout
@@ -273,6 +256,12 @@ export default function AssignmentsPage({
                     >
                       {activeEditAssignmentId === assignment.id ? "Close Assignment Editor" : "Edit Assignment"}
                     </button>
+                    <Link
+                      href={`/assignments/${assignment.id}`}
+                      className="inline-flex rounded-2xl border border-[#e8ddff] bg-white px-4 py-3 text-sm font-semibold text-[#6b00ff]"
+                    >
+                      View Submissions
+                    </Link>
                   </div>
 
                   {activeEditAssignmentId === assignment.id ? (
@@ -327,55 +316,14 @@ export default function AssignmentsPage({
                     </div>
                   ) : null}
 
-                  {!assignment.submissions.length ? (
-                    <EmptyState title="No submissions yet" description="Submissions will appear here after students respond." />
-                  ) : (
-                    managedAssignments
-                      .find((currentAssignment) => currentAssignment.id === assignment.id)!
-                      .submissions.map((submission) => {
-                        const gradedSubmission = submission as typeof submission & {
-                          student: {
-                            fullName: string;
-                            studentId: string | null;
-                          };
-                        };
-
-                        return (
-                      <div key={submission.id} className="rounded-[22px] border border-[#efe6ff] bg-white p-4">
-                        <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
-                          <div>
-                            <p className="font-semibold text-slate-950">{gradedSubmission.student.fullName}</p>
-                            <p className="text-sm text-slate-600">{gradedSubmission.student.studentId ?? "No ID"}</p>
-                            <p className="mt-1 text-sm text-slate-600">Submitted {formatDate(submission.submittedAt)}</p>
-                            {submission.gradedAt ? <p className="mt-1 text-sm text-slate-600">Graded {formatDate(submission.gradedAt)}</p> : null}
-                            {submission.textSubmission ? <p className="mt-2 text-sm text-slate-600">{submission.textSubmission}</p> : null}
-                            {submission.linkUrl ? (
-                              <a href={submission.linkUrl} target="_blank" rel="noreferrer" className="mt-2 inline-flex text-sm font-semibold text-[#6b00ff]">
-                                Open submitted link
-                              </a>
-                            ) : null}
-                            {submission.fileUrl ? <div className="mt-3"><FileDisplay url={submission.fileUrl} title="Submission file" /></div> : null}
-                            {!submission.textSubmission && !submission.linkUrl && !submission.fileUrl ? (
-                              <p className="mt-2 text-sm text-slate-600">Submission recorded</p>
-                            ) : null}
-                          </div>
-                          <div className="min-w-[280px]">
-                            <ApiForm
-                              action="/api/assignments/grade"
-                              submitLabel="Save grade"
-                              successMessage="Grade saved."
-                              className="grid gap-3"
-                            >
-                              <input type="hidden" name="submissionId" value={submission.id} />
-                              <FormField label="Score" name="score" type="number" defaultValue={submission.score ?? ""} />
-                              <FormField label="Feedback" name="feedback" as="textarea" defaultValue={submission.feedback ?? ""} />
-                            </ApiForm>
-                          </div>
-                        </div>
-                      </div>
-                        );
-                      })
-                  )}
+                  <div className="rounded-[22px] border border-[#efe6ff] bg-white p-4">
+                    <p className="font-semibold text-slate-950">
+                      {assignment.submissions.length} submission{assignment.submissions.length === 1 ? "" : "s"}
+                    </p>
+                    <p className="mt-1 text-sm text-slate-600">
+                      Open the submissions page to review student work, see submission times, grade, and give feedback.
+                    </p>
+                  </div>
                 </div>
               )}
             </Panel>

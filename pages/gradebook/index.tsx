@@ -6,7 +6,6 @@ import EmptyState from "@/components/ui/EmptyState";
 import Panel from "@/components/ui/Panel";
 import { getManagedCourseWhere } from "@/lib/courseManagers";
 import { formatDate } from "@/lib/format";
-import { syncCourseGradebook } from "@/lib/gradebook";
 import { requirePageAuth } from "@/lib/pageAuth";
 import { prisma } from "@/lib/prisma";
 import { serialize } from "@/lib/serialize";
@@ -32,31 +31,8 @@ export async function getServerSideProps(ctx: GetServerSidePropsContext) {
       orderBy: { title: "asc" },
     });
 
-    for (const course of courses) {
-      await syncCourseGradebook(course.id);
-    }
-
-    const refreshedCourses = await prisma.course.findMany({
-      where: { id: { in: courses.map((course) => course.id) } },
-      include: {
-        enrollments: {
-          select: {
-            studentId: true,
-          },
-        },
-        gradebookColumns: {
-          select: {
-            id: true,
-            type: true,
-          },
-        },
-        gradebookPublication: true,
-      },
-      orderBy: { title: "asc" },
-    });
-
     return {
-      courses: serialize(refreshedCourses),
+      courses: serialize(courses),
     };
   });
 }
@@ -70,7 +46,7 @@ export default function GradebookIndexPage({
       role={session.role}
       session={session}
       title="Gradebook"
-      description="Open a course gradebook to edit attendance, review quiz and assignment columns, import CSV data, and publish results to students."
+      description="Open a course gradebook to build and manage a course-based grade sheet, import CSV data, and publish results to students."
     >
       {!courses.length ? (
         <EmptyState title="No managed courses yet" description="Courses you manage will appear here with their gradebooks." />
@@ -88,12 +64,7 @@ export default function GradebookIndexPage({
             >
               <div className="mb-5 flex flex-wrap items-center gap-2">
                 <Badge tone="purple">{course.enrollments.length} students</Badge>
-                <Badge tone="slate">
-                  {course.gradebookColumns.filter((column) => column.type === "QUIZ").length} quiz columns
-                </Badge>
-                <Badge tone="slate">
-                  {course.gradebookColumns.filter((column) => column.type === "ASSIGNMENT").length} assignment columns
-                </Badge>
+                <Badge tone="slate">{course.gradebookColumns.length} columns</Badge>
                 <Badge tone="green">
                   {course.gradebookColumns.filter((column) => column.type === "ATTENDANCE").length} attendance columns
                 </Badge>

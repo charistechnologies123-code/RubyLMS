@@ -84,7 +84,7 @@ export default function CourseGradebookPage({
     maxScore: column.maxScore,
     includeInTotals: column.includeInTotals,
     scorePath: `/gradebook/${course.id}/columns/${column.id}`,
-    editable: column.type === "CUSTOM" || column.type === "ATTENDANCE",
+    editable: true,
     cells: column.cells.map((cell) => ({
       studentId: cell.studentId,
       score: cell.score,
@@ -96,7 +96,7 @@ export default function CourseGradebookPage({
       role={session.role}
       session={session}
       title={`${course.title} Gradebook`}
-      description="Edit this course gradebook like a worksheet, open columns for drill-down, and publish the finished gradebook to students."
+      description="Build this course gradebook column by column, import quiz or assignment scores when you choose, and publish the finished sheet to students."
     >
       <div className="space-y-6">
         <Panel title={course.title} subtitle="Course gradebook">
@@ -122,7 +122,7 @@ export default function CourseGradebookPage({
         </Panel>
 
         <div className="grid gap-6 lg:grid-cols-[1.15fr_0.85fr]">
-          <Panel title="Add Columns" subtitle="Create other score columns such as Participation, Project, CA, or Attendance 2.">
+          <Panel title="Add Columns" subtitle="Create columns manually for quizzes, assignments, attendance, tests, projects, CA, or any other score item.">
             <ApiForm
               action={`/api/gradebook/courses/${course.id}/columns`}
               submitLabel="Add gradebook column"
@@ -174,7 +174,7 @@ export default function CourseGradebookPage({
         ) : (
           <Panel
             title="Course Grade Sheet"
-            subtitle="Quiz and assignment columns are read-only here and open into drill-down pages. Attendance and custom columns are editable directly in the table."
+            subtitle="Every column is editable here like a worksheet. Open a column when you want to import quiz or assignment scores, review students, or clear a student score."
           >
             <GradebookSpreadsheet courseId={course.id} students={students} columns={columns} />
           </Panel>

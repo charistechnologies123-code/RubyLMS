@@ -31,10 +31,7 @@ async function handler(req: AuthedNextApiRequest, res: NextApiResponse) {
     const updatedColumn = await prisma.gradebookColumn.update({
       where: { id: columnId },
       data: {
-        title:
-          column.type === "CUSTOM" || column.type === "ATTENDANCE"
-            ? title?.trim() || column.title
-            : undefined,
+        title: title?.trim() || column.title,
         maxScore: maxScore === "" || typeof maxScore === "undefined" ? null : Number(maxScore),
         includeInTotals: includeInTotals === true || includeInTotals === "true",
       },
@@ -44,10 +41,6 @@ async function handler(req: AuthedNextApiRequest, res: NextApiResponse) {
   }
 
   if (req.method === "DELETE") {
-    if (column.type !== "CUSTOM" && column.type !== "ATTENDANCE") {
-      return res.status(400).json({ error: "Only attendance and custom columns can be deleted." });
-    }
-
     await prisma.gradebookColumn.delete({
       where: { id: columnId },
     });

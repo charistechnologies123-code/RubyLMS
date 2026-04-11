@@ -145,7 +145,7 @@ export default function GradebookSpreadsheet({
                     )}
                     <p className="text-xs font-medium uppercase tracking-[0.16em] text-slate-500">
                       {column.type}
-                      {typeof column.maxScore === "number" ? ` • / ${column.maxScore}` : ""}
+                      {typeof column.maxScore === "number" ? ` | / ${column.maxScore}` : ""}
                     </p>
                   </div>
                 </th>
@@ -206,14 +206,16 @@ export default function GradebookSpreadsheet({
                           />
                         ) : (
                           <div className="rounded-2xl bg-[#faf7ff] px-3 py-2 text-sm text-slate-700">
-                            {typeof readOnlyScore === "number" ? readOnlyScore.toFixed(2).replace(/\.00$/, "") : "—"}
+                            {typeof readOnlyScore === "number" ? readOnlyScore.toFixed(2).replace(/\.00$/, "") : "-"}
                           </div>
                         )}
                       </td>
                     );
                   })}
                   <td className="px-4 py-3 align-top font-semibold text-slate-900">
-                    {possible > 0 ? `${total.toFixed(2).replace(/\.00$/, "")} / ${possible.toFixed(2).replace(/\.00$/, "")}` : total.toFixed(2).replace(/\.00$/, "")}
+                    {possible > 0
+                      ? `${total.toFixed(2).replace(/\.00$/, "")} / ${possible.toFixed(2).replace(/\.00$/, "")}`
+                      : total.toFixed(2).replace(/\.00$/, "")}
                   </td>
                   <td className="px-4 py-3 align-top font-semibold text-[#6b00ff]">{average.toFixed(2)}%</td>
                 </tr>
