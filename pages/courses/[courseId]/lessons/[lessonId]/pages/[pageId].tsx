@@ -1,6 +1,7 @@
 import type { GetServerSidePropsContext, GetServerSidePropsResult } from "next";
 import Link from "next/link";
 import { useRouter } from "next/router";
+import PageCompletionTracker from "@/components/progress/PageCompletionTracker";
 import DashboardLayout from "@/components/dashboard/DashboardLayout";
 import ApiActionButton from "@/components/ui/ApiActionButton";
 import ApiForm from "@/components/ui/ApiForm";
@@ -11,6 +12,7 @@ import FormField from "@/components/ui/FormField";
 import ImageUploadField from "@/components/ui/ImageUploadField";
 import Panel from "@/components/ui/Panel";
 import RichTextEditorField from "@/components/ui/RichTextEditorField";
+import { formatEstimatedDuration } from "@/lib/courseProgress";
 import { getManagedCourseWhere } from "@/lib/courseManagers";
 import { assertRoleAccess, getDefaultRouteForRole, getSessionFromPageContext } from "@/lib/auth";
 import { toEmbeddableUrl } from "@/lib/media";
@@ -22,6 +24,7 @@ type LessonPageNavItem = {
   id: string;
   title: string;
   order: number;
+  estimatedDurationMinutes: number | null;
 };
 
 type LessonContentResource = {
@@ -53,6 +56,11 @@ type LessonContentData = {
   imageUrl: string | null;
   externalUrl: string | null;
   embedUrl: string | null;
+  estimatedDurationMinutes: number | null;
+  progress: Array<{
+    timeSpentSeconds: number;
+    completed: boolean;
+  }>;
   resources: LessonContentResource[];
 };
 
@@ -138,6 +146,7 @@ export async function getServerSideProps(
           id: true,
           title: true,
           order: true,
+          estimatedDurationMinutes: true,
         },
       },
     },
@@ -153,6 +162,18 @@ export async function getServerSideProps(
       lessonId,
     },
     include: {
+      progress:
+        session.role === "STUDENT"
+          ? {
+              where: {
+                studentId: session.userId,
+              },
+              select: {
+                timeSpentSeconds: true,
+                completed: true,
+              },
+            }
+          : false,
       resources: {
         orderBy: { createdAt: "desc" },
       },
@@ -212,7 +233,16 @@ export default function LessonContentPage({
             <div className="flex flex-wrap items-center gap-2">
               <Badge tone="purple">{lesson.title}</Badge>
               <Badge tone="slate">Page</Badge>
+              <Badge tone="slate">{formatEstimatedDuration(page.estimatedDurationMinutes)}</Badge>
             </div>
+            {session.role === "STUDENT" ? (
+              <PageCompletionTracker
+                lessonPageId={page.id}
+                estimatedDurationMinutes={page.estimatedDurationMinutes}
+                initialTimeSpentSeconds={page.progress[0]?.timeSpentSeconds ?? 0}
+                initiallyCompleted={page.progress[0]?.completed ?? false}
+              />
+            ) : null}
             <div className="max-w-4xl space-y-4">
               <div
                 className="rich-content text-sm leading-7 text-slate-700"
@@ -294,6 +324,14 @@ export default function LessonContentPage({
               initialValue={page.body}
               required
               helperText="Use headings, paragraphs, lists, tables, links, and embeds to shape this page."
+            />
+            <FormField
+              label="Estimated duration (minutes)"
+              name="estimatedDurationMinutes"
+              type="number"
+              min="0"
+              defaultValue={page.estimatedDurationMinutes ?? ""}
+              helperText="Students must spend at least this amount of time before Mark as Done can succeed."
             />
             <FormField label="External URL" name="externalUrl" defaultValue={page.externalUrl ?? ""} placeholder="https://..." />
             <FormField label="Embed URL" name="embedUrl" defaultValue={page.embedUrl ?? ""} placeholder="https://www.youtube.com/embed/..." />

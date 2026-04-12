@@ -105,6 +105,7 @@ model User {
   questionsAsked      CourseQuestion[]       @relation("CourseQuestionAskedBy")
   questionAnswers     CourseQuestionAnswer[] @relation("CourseQuestionAnsweredBy")
   lessonProgress      LessonProgress[]
+  lessonPageProgress  LessonPageProgress[]
   gradebookEntries    GradebookEntry[]
   createdGradebookColumns GradebookColumn[] @relation("GradebookColumnCreatedBy")
   gradebookCells      GradebookCell[]
@@ -206,6 +207,7 @@ model LessonPage {
   externalUrl   String?
   imageUrl      String?
   embedUrl      String?
+  estimatedDurationMinutes Int?
   order         Int
   createdAt     DateTime  @default(now())
   updatedAt     DateTime  @updatedAt
@@ -214,10 +216,29 @@ model LessonPage {
   lesson        Lesson    @relation(fields: [lessonId], references: [id], onDelete: Cascade)
 
   resources     Resource[]
+  progress      LessonPageProgress[]
 
   @@unique([lessonId, slug])
   @@unique([lessonId, order])
   @@index([lessonId])
+}
+
+model LessonPageProgress {
+  id              String     @id @default(cuid())
+  timeSpentSeconds Int       @default(0)
+  completed       Boolean    @default(false)
+  completedAt     DateTime?
+  createdAt       DateTime   @default(now())
+  updatedAt       DateTime   @updatedAt
+
+  lessonPageId    String
+  studentId       String
+
+  lessonPage      LessonPage @relation(fields: [lessonPageId], references: [id], onDelete: Cascade)
+  student         User       @relation(fields: [studentId], references: [id], onDelete: Cascade)
+
+  @@unique([lessonPageId, studentId])
+  @@index([studentId])
 }
 
 model LessonProgress {
@@ -439,6 +460,7 @@ model Announcement {
   id            String    @id @default(cuid())
   title         String
   content       String
+  imageUrl      String?
   createdAt     DateTime  @default(now())
   updatedAt     DateTime  @updatedAt
 

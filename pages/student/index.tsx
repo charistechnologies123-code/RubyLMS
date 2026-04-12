@@ -55,7 +55,7 @@ export async function getServerSideProps(ctx: GetServerSidePropsContext) {
         orderBy: { createdAt: "desc" },
         take: 6,
       }),
-      prisma.lessonProgress.findMany({
+      prisma.lessonPageProgress.findMany({
         where: { studentId: session.userId, completed: true },
       }),
     ]);
@@ -93,7 +93,7 @@ export default function StudentDashboard({
       <section className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
         <StatCard label="Enrolled courses" value={stats.courses} helper="Your active learning spaces" />
         <StatCard label="Due assignments" value={stats.dueAssignments} helper="Assignments waiting for submission" accent="red" />
-        <StatCard label="Completed lessons" value={stats.completedLessons} helper="Tracked lesson progress" />
+        <StatCard label="Completed pages" value={stats.completedLessons} helper="Tracked page progress" />
         <StatCard label="Quiz attempts" value={stats.quizzesTaken} helper="Recorded quiz submissions" />
       </section>
 

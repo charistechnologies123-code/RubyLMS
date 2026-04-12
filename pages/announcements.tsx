@@ -5,6 +5,7 @@ import ApiForm from "@/components/ui/ApiForm";
 import Badge from "@/components/ui/Badge";
 import EmptyState from "@/components/ui/EmptyState";
 import FormField from "@/components/ui/FormField";
+import ImageUploadField from "@/components/ui/ImageUploadField";
 import Panel from "@/components/ui/Panel";
 import { getManagedCourseWhere } from "@/lib/courseManagers";
 import { formatShortDate } from "@/lib/format";
@@ -78,6 +79,16 @@ export default function AnnouncementsPage({
             />
             <FormField label="Title" name="title" required />
             <div className="md:col-span-2">
+              <ImageUploadField
+                label="Announcement image"
+                name="imageUrl"
+                helperText="Upload an optional image to attach to this announcement."
+                emptyLabel="No image"
+                maxFileSizeKb={750}
+                previewClassName="h-24 w-40 rounded-[20px]"
+              />
+            </div>
+            <div className="md:col-span-2">
               <FormField label="Message" name="content" as="textarea" rows={6} required />
             </div>
           </ApiForm>
@@ -96,6 +107,14 @@ export default function AnnouncementsPage({
                   <Badge tone="slate">{announcement.createdBy.role}</Badge>
                 </div>
                 <p className="mt-3 font-semibold text-slate-950">{announcement.title}</p>
+                {announcement.imageUrl ? (
+                  // eslint-disable-next-line @next/next/no-img-element
+                  <img
+                    src={announcement.imageUrl}
+                    alt={announcement.title}
+                    className="mt-3 h-auto max-h-[320px] w-full rounded-[24px] object-cover"
+                  />
+                ) : null}
                 <p className="mt-2 text-sm text-slate-600">{announcement.content}</p>
                 <p className="mt-3 text-xs uppercase tracking-[0.18em] text-slate-500">
                   {announcement.createdBy.fullName} • {formatShortDate(announcement.createdAt)}

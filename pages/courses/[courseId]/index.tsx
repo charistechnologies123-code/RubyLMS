@@ -14,6 +14,7 @@ import FormField from "@/components/ui/FormField";
 import ImageUploadField from "@/components/ui/ImageUploadField";
 import Panel from "@/components/ui/Panel";
 import QuizBuilderField from "@/components/ui/QuizBuilderField";
+import { calculateCourseProgress } from "@/lib/courseProgress";
 import { getManagedCourseWhere } from "@/lib/courseManagers";
 import { assertRoleAccess, getDefaultRouteForRole, getSessionFromPageContext } from "@/lib/auth";
 import { formatDate, formatShortDate } from "@/lib/format";
@@ -121,11 +122,19 @@ export async function getServerSideProps(
         include: {
           pages: {
             orderBy: { order: "asc" },
-            select: {
-              id: true,
-              title: true,
-              order: true,
-            },
+            include:
+              session.role === "STUDENT"
+                ? {
+                    progress: {
+                      where: {
+                        studentId: session.userId,
+                      },
+                      select: {
+                        completed: true,
+                      },
+                    },
+                  }
+                : undefined,
           },
           resources: {
             orderBy: { createdAt: "desc" },
@@ -331,6 +340,16 @@ export default function CourseWorkspacePage({
       }>;
     }
   >;
+  const totalCoursePages = course.lessons.reduce((total: number, lesson: any) => total + lesson.pages.length, 0);
+  const completedCoursePages =
+    session.role === "STUDENT"
+      ? course.lessons.reduce(
+          (total: number, lesson: any) =>
+            total + lesson.pages.filter((page: any) => page.progress?.[0]?.completed).length,
+          0,
+        )
+      : 0;
+  const courseProgress = calculateCourseProgress(completedCoursePages, totalCoursePages);
 
   function toggleComposer(composer: Exclude<CourseComposer, null>) {
     setActiveComposer((currentComposer) => (currentComposer === composer ? null : composer));
@@ -388,6 +407,30 @@ export default function CourseWorkspacePage({
                 </p>
               </div>
             </div>
+            {session.role === "STUDENT" ? (
+              <div className="rounded-[24px] border border-[#e8ddff] bg-white p-5">
+                <div className="flex flex-wrap items-center justify-between gap-3">
+                  <div>
+                    <p className="text-xs uppercase tracking-[0.18em] text-slate-500">Course progress</p>
+                    <p className="mt-2 text-lg font-semibold text-slate-950">
+                      {courseProgress.percentage}% complete
+                    </p>
+                    <p className="mt-1 text-sm text-slate-600">
+                      {courseProgress.completedPages} of {courseProgress.totalPages} pages marked done
+                    </p>
+                  </div>
+                  <Badge tone={courseProgress.percentage === 100 ? "green" : "purple"}>
+                    {courseProgress.percentage === 100 ? "Completed" : "In progress"}
+                  </Badge>
+                </div>
+                <div className="mt-4 h-3 overflow-hidden rounded-full bg-[#f1e8ff]">
+                  <div
+                    className="h-full rounded-full bg-[linear-gradient(135deg,#159957,#38ef7d)] transition-all"
+                    style={{ width: `${courseProgress.percentage}%` }}
+                  />
+                </div>
+              </div>
+            ) : null}
           </div>
 
           <div className="flex flex-wrap gap-2 lg:max-w-[320px] lg:justify-end">
@@ -1065,6 +1108,14 @@ export default function CourseWorkspacePage({
                       <Badge tone="purple">{formatShortDate(announcement.createdAt)}</Badge>
                     </div>
                     <p className="mt-3 font-semibold text-slate-950">{announcement.title}</p>
+                    {announcement.imageUrl ? (
+                      // eslint-disable-next-line @next/next/no-img-element
+                      <img
+                        src={announcement.imageUrl}
+                        alt={announcement.title}
+                        className="mt-3 h-auto max-h-[320px] w-full rounded-[24px] object-cover"
+                      />
+                    ) : null}
                     <p className="mt-2 text-sm text-slate-600">{announcement.content}</p>
                     <p className="mt-3 text-xs uppercase tracking-[0.18em] text-slate-500">
                       {announcement.createdBy.fullName}
@@ -1106,6 +1157,14 @@ export default function CourseWorkspacePage({
                     >
                       <input type="hidden" name="courseId" value={course.id} />
                       <FormField label="Title" name="title" required />
+                      <ImageUploadField
+                        label="Announcement image"
+                        name="imageUrl"
+                        helperText="Upload an optional image to attach to this announcement."
+                        emptyLabel="No image"
+                        maxFileSizeKb={750}
+                        previewClassName="h-24 w-40 rounded-[20px]"
+                      />
                       <FormField label="Message" name="content" as="textarea" rows={6} required />
                     </ApiForm>
                   </div>

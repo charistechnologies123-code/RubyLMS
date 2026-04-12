@@ -12,6 +12,7 @@ import FormField from "@/components/ui/FormField";
 import ImageUploadField from "@/components/ui/ImageUploadField";
 import Panel from "@/components/ui/Panel";
 import QuizBuilderField from "@/components/ui/QuizBuilderField";
+import { formatEstimatedDuration } from "@/lib/courseProgress";
 import RichTextEditorField from "@/components/ui/RichTextEditorField";
 import { getManagedCourseWhere } from "@/lib/courseManagers";
 import { assertRoleAccess, getDefaultRouteForRole, getSessionFromPageContext } from "@/lib/auth";
@@ -40,6 +41,10 @@ type ModulePageItem = {
   title: string;
   body: string;
   order: number;
+  estimatedDurationMinutes: number | null;
+  progress: Array<{
+    completed: boolean;
+  }>;
   resources: LessonPageResource[];
 };
 
@@ -192,6 +197,17 @@ export async function getServerSideProps(
       pages: {
         orderBy: { order: "asc" },
         include: {
+          progress:
+            session.role === "STUDENT"
+              ? {
+                  where: {
+                    studentId: session.userId,
+                  },
+                  select: {
+                    completed: true,
+                  },
+                }
+              : false,
           resources: {
             orderBy: { createdAt: "desc" },
           },
@@ -445,6 +461,13 @@ export default function LessonPage({
                       required
                       helperText="Build the module page with headings, text, lists, links, tables, and embeds."
                     />
+                    <FormField
+                      label="Estimated duration (minutes)"
+                      name="estimatedDurationMinutes"
+                      type="number"
+                      min="0"
+                      helperText="Students must spend at least this much time before they can mark the page as done."
+                    />
                     <FormField label="Resource link" name="externalUrl" placeholder="https://..." />
                     <FormField label="Embed URL" name="embedUrl" placeholder="https://www.youtube.com/embed/..." />
                     <ImageUploadField
@@ -586,6 +609,12 @@ export default function LessonPage({
                       <div className="flex flex-wrap items-center gap-2">
                         <Badge tone="purple">Page</Badge>
                         <Badge tone="slate">{page.resources.length} resources</Badge>
+                        <Badge tone="slate">{formatEstimatedDuration(page.estimatedDurationMinutes)}</Badge>
+                        {session.role === "STUDENT" ? (
+                          <Badge tone={page.progress[0]?.completed ? "green" : "red"}>
+                            {page.progress[0]?.completed ? "Done" : "Yet to do"}
+                          </Badge>
+                        ) : null}
                       </div>
                       <p className="mt-3 font-semibold text-slate-950">{page.title}</p>
                       <p className="mt-2 text-sm text-slate-600">{getPlainTextPreview(page.body)}</p>

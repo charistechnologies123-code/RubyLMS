@@ -11,13 +11,14 @@ async function handler(req: AuthedNextApiRequest, res: NextApiResponse) {
     return res.status(405).json({ error: "Method not allowed" });
   }
 
-  const { lessonId, title, body, externalUrl, imageUrl, embedUrl } = req.body as {
+  const { lessonId, title, body, externalUrl, imageUrl, embedUrl, estimatedDurationMinutes } = req.body as {
     lessonId?: string;
     title?: string;
     body?: string;
     externalUrl?: string;
     imageUrl?: string;
     embedUrl?: string;
+    estimatedDurationMinutes?: string;
   };
 
   if (!lessonId || !title || !body) {
@@ -72,6 +73,10 @@ async function handler(req: AuthedNextApiRequest, res: NextApiResponse) {
       externalUrl: externalUrl?.trim() || null,
       imageUrl: normalizedImageUrl,
       embedUrl: normalizedEmbedUrl,
+      estimatedDurationMinutes:
+        estimatedDurationMinutes && estimatedDurationMinutes.length
+          ? Number(estimatedDurationMinutes)
+          : null,
       order: lesson.pages.length + 1,
       slug: duplicateCount ? `${baseSlug}-${duplicateCount + 1}` : baseSlug,
     },

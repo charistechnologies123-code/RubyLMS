@@ -9,6 +9,10 @@ type FormFieldProps = {
   rows?: number;
   options?: Array<{ label: string; value: string }>;
   disabled?: boolean;
+  helperText?: string;
+  min?: string | number;
+  max?: string | number;
+  step?: string | number;
 };
 
 export default function FormField({
@@ -22,6 +26,10 @@ export default function FormField({
   rows = 4,
   options = [],
   disabled,
+  helperText,
+  min,
+  max,
+  step,
 }: FormFieldProps) {
   const className =
     "mt-2 w-full rounded-2xl border border-[#e8ddff] bg-white px-4 py-3 text-sm text-slate-900 outline-none transition placeholder:text-slate-400 focus:border-[#6b00ff] focus:ring-2 focus:ring-[#efe4ff]";
@@ -62,8 +70,12 @@ export default function FormField({
           required={required}
           type={type}
           disabled={disabled}
+          min={min}
+          max={max}
+          step={step}
         />
       )}
+      {helperText ? <p className="mt-2 text-xs text-slate-500">{helperText}</p> : null}
     </label>
   );
 }

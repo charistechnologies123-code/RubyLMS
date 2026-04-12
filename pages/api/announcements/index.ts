@@ -5,6 +5,7 @@ import { notifyUsers } from "@/lib/notifications";
 import { withApiAuth, type AuthedNextApiRequest } from "@/lib/api";
 import { getManagedCourseWhere } from "@/lib/courseManagers";
 import { canManageCourse } from "@/lib/permissions";
+import { normalizeImageInput } from "@/lib/media";
 
 async function handler(req: AuthedNextApiRequest, res: NextApiResponse) {
   if (req.method === "GET") {
@@ -43,14 +44,25 @@ async function handler(req: AuthedNextApiRequest, res: NextApiResponse) {
   }
 
   if (req.method === "POST") {
-    const { courseId, title, content } = req.body as {
+    const { courseId, title, content, imageUrl } = req.body as {
       courseId?: string;
       title?: string;
       content?: string;
+      imageUrl?: string;
     };
 
     if (!courseId || !title || !content) {
       return res.status(400).json({ error: "courseId, title, and content are required." });
+    }
+
+    let normalizedImageUrl: string | null | undefined;
+
+    try {
+      normalizedImageUrl = normalizeImageInput(imageUrl, "Announcement image");
+    } catch (error) {
+      return res.status(400).json({
+        error: error instanceof Error ? error.message : "Invalid announcement image.",
+      });
     }
 
     const course = await prisma.course.findUnique({
@@ -76,6 +88,7 @@ async function handler(req: AuthedNextApiRequest, res: NextApiResponse) {
         courseId,
         title,
         content,
+        imageUrl: normalizedImageUrl,
         createdById: req.session.userId,
       },
     });
@@ -101,3 +114,11 @@ async function handler(req: AuthedNextApiRequest, res: NextApiResponse) {
 }
 
 export default withApiAuth(handler, ["ADMIN", "INSTRUCTOR", "STUDENT"]);
+
+export const config = {
+  api: {
+    bodyParser: {
+      sizeLimit: "4mb",
+    },
+  },
+};

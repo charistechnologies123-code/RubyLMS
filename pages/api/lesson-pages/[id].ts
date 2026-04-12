@@ -37,12 +37,13 @@ async function handler(req: AuthedNextApiRequest, res: NextApiResponse) {
   }
 
   if (req.method === "PATCH") {
-    const { title, body, externalUrl, imageUrl, embedUrl } = req.body as {
+    const { title, body, externalUrl, imageUrl, embedUrl, estimatedDurationMinutes } = req.body as {
       title?: string;
       body?: string;
       externalUrl?: string;
       imageUrl?: string;
       embedUrl?: string;
+      estimatedDurationMinutes?: string;
     };
 
     let normalizedImageUrl: string | null | undefined;
@@ -65,6 +66,12 @@ async function handler(req: AuthedNextApiRequest, res: NextApiResponse) {
         externalUrl: externalUrl?.trim() || null,
         imageUrl: normalizedImageUrl,
         embedUrl: normalizedEmbedUrl,
+        estimatedDurationMinutes:
+          typeof estimatedDurationMinutes === "undefined"
+            ? undefined
+            : estimatedDurationMinutes.length
+              ? Number(estimatedDurationMinutes)
+              : null,
       },
     });
 
