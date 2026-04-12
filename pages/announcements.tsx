@@ -6,6 +6,7 @@ import Badge from "@/components/ui/Badge";
 import EmptyState from "@/components/ui/EmptyState";
 import FormField from "@/components/ui/FormField";
 import ImageUploadField from "@/components/ui/ImageUploadField";
+import MarkAnnouncementReadButton from "@/components/ui/MarkAnnouncementReadButton";
 import Panel from "@/components/ui/Panel";
 import { getManagedCourseWhere } from "@/lib/courseManagers";
 import { formatShortDate } from "@/lib/format";
@@ -35,6 +36,14 @@ export async function getServerSideProps(ctx: GetServerSidePropsContext) {
               : {},
         include: {
           course: true,
+          reads: {
+            where: {
+              userId: session.userId,
+            },
+            select: {
+              id: true,
+            },
+          },
           createdBy: { select: { fullName: true, role: true } },
         },
         orderBy: { createdAt: "desc" },
@@ -105,6 +114,9 @@ export default function AnnouncementsPage({
                 <div className="flex flex-wrap items-center gap-2">
                   <Badge tone="purple">{announcement.course.title}</Badge>
                   <Badge tone="slate">{announcement.createdBy.role}</Badge>
+                  <Badge tone={announcement.reads.length ? "green" : "purple"}>
+                    {announcement.reads.length ? "Read" : "Unread"}
+                  </Badge>
                 </div>
                 <p className="mt-3 font-semibold text-slate-950">{announcement.title}</p>
                 {announcement.imageUrl ? (
@@ -119,8 +131,11 @@ export default function AnnouncementsPage({
                 <p className="mt-3 text-xs uppercase tracking-[0.18em] text-slate-500">
                   {announcement.createdBy.fullName} • {formatShortDate(announcement.createdAt)}
                 </p>
-                {canManage ? (
-                  <div className="mt-4">
+                <div className="mt-4 flex flex-wrap gap-3">
+                  {!announcement.reads.length ? (
+                    <MarkAnnouncementReadButton announcementId={announcement.id} />
+                  ) : null}
+                  {canManage ? (
                     <ApiActionButton
                       action={`/api/announcements/${announcement.id}`}
                       method="DELETE"
@@ -130,8 +145,8 @@ export default function AnnouncementsPage({
                       tone="danger"
                       confirmMessage={`Delete announcement "${announcement.title}"?`}
                     />
-                  </div>
-                ) : null}
+                  ) : null}
+                </div>
               </article>
             ))}
           </div>

@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { useRouter } from "next/router";
+import { useEffect, useState } from "react";
 import { ChevronLeft, ChevronRight } from "lucide-react";
 import { navigation, Role } from "@/lib/navigation";
 
@@ -22,6 +23,34 @@ export default function Sidebar({
 }: Props) {
   const router = useRouter();
   const navItems = navigation[role];
+  const [counts, setCounts] = useState<{ announcements: number; questions: number }>({
+    announcements: 0,
+    questions: 0,
+  });
+
+  useEffect(() => {
+    let active = true;
+
+    async function loadCounts() {
+      const response = await fetch("/api/sidebar-counts");
+      const result = await response.json().catch(() => null);
+
+      if (!response.ok || !result || !active) {
+        return;
+      }
+
+      setCounts({
+        announcements: result.announcements ?? 0,
+        questions: result.questions ?? 0,
+      });
+    }
+
+    void loadCounts();
+
+    return () => {
+      active = false;
+    };
+  }, [router.asPath]);
 
   return (
     <>
@@ -62,6 +91,12 @@ export default function Sidebar({
             const Icon = item.icon;
             const isActive =
               router.pathname === item.href || router.pathname.startsWith(`${item.href}/`);
+            const badgeCount =
+              item.href === "/announcements"
+                ? counts.announcements
+                : item.href === "/questions"
+                  ? counts.questions
+                  : 0;
 
             return (
               <Link
@@ -75,7 +110,18 @@ export default function Sidebar({
                 }`}
               >
                 <Icon size={18} />
-                {!collapsed && <span>{item.name}</span>}
+                {!collapsed && (
+                  <div className="flex min-w-0 flex-1 items-center justify-between gap-3">
+                    <span>{item.name}</span>
+                    {badgeCount > 0 ? (
+                      <span className={`inline-flex min-w-[1.6rem] items-center justify-center rounded-full px-2 py-1 text-xs font-semibold ${
+                        isActive ? "bg-white/20 text-white" : "bg-[#8c3cff] text-white"
+                      }`}>
+                        {badgeCount}
+                      </span>
+                    ) : null}
+                  </div>
+                )}
               </Link>
             );
           })}

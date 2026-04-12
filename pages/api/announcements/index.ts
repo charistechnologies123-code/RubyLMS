@@ -31,6 +31,14 @@ async function handler(req: AuthedNextApiRequest, res: NextApiResponse) {
       orderBy: { createdAt: "desc" },
       include: {
         course: true,
+        reads: {
+          where: {
+            userId: req.session.userId,
+          },
+          select: {
+            id: true,
+          },
+        },
         createdBy: {
           select: {
             fullName: true,
@@ -90,6 +98,11 @@ async function handler(req: AuthedNextApiRequest, res: NextApiResponse) {
         content,
         imageUrl: normalizedImageUrl,
         createdById: req.session.userId,
+        reads: {
+          create: {
+            userId: req.session.userId,
+          },
+        },
       },
     });
 

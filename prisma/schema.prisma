@@ -102,6 +102,7 @@ model User {
   quizCreated         Quiz[]                 @relation("QuizCreatedBy")
   quizAttempts        QuizAttempt[]
   announcements       Announcement[]         @relation("AnnouncementCreatedBy")
+  announcementReads   AnnouncementRead[]
   questionsAsked      CourseQuestion[]       @relation("CourseQuestionAskedBy")
   questionAnswers     CourseQuestionAnswer[] @relation("CourseQuestionAnsweredBy")
   lessonProgress      LessonProgress[]
@@ -469,8 +470,23 @@ model Announcement {
 
   course        Course    @relation(fields: [courseId], references: [id], onDelete: Cascade)
   createdBy     User      @relation("AnnouncementCreatedBy", fields: [createdById], references: [id], onDelete: Restrict)
-
+  reads         AnnouncementRead[]
+  
   @@index([courseId])
+}
+
+model AnnouncementRead {
+  id             String       @id @default(cuid())
+  createdAt      DateTime     @default(now())
+
+  announcementId String
+  userId         String
+
+  announcement   Announcement @relation(fields: [announcementId], references: [id], onDelete: Cascade)
+  user           User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([announcementId, userId])
+  @@index([userId])
 }
 
 model CourseQuestion {

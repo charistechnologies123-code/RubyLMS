@@ -12,6 +12,7 @@ import FileDisplay from "@/components/ui/FileDisplay";
 import FileUploadField from "@/components/ui/FileUploadField";
 import FormField from "@/components/ui/FormField";
 import ImageUploadField from "@/components/ui/ImageUploadField";
+import MarkAnnouncementReadButton from "@/components/ui/MarkAnnouncementReadButton";
 import Panel from "@/components/ui/Panel";
 import QuizBuilderField from "@/components/ui/QuizBuilderField";
 import { calculateCourseProgress } from "@/lib/courseProgress";
@@ -221,6 +222,14 @@ export async function getServerSideProps(
       announcements: {
         orderBy: { createdAt: "desc" },
         include: {
+          reads: {
+            where: {
+              userId: session.userId,
+            },
+            select: {
+              id: true,
+            },
+          },
           createdBy: {
             select: {
               fullName: true,
@@ -1106,6 +1115,9 @@ export default function CourseWorkspacePage({
                     <div className="flex flex-wrap items-center gap-2">
                       <Badge tone="slate">{announcement.createdBy.role}</Badge>
                       <Badge tone="purple">{formatShortDate(announcement.createdAt)}</Badge>
+                      <Badge tone={announcement.reads.length ? "green" : "purple"}>
+                        {announcement.reads.length ? "Read" : "Unread"}
+                      </Badge>
                     </div>
                     <p className="mt-3 font-semibold text-slate-950">{announcement.title}</p>
                     {announcement.imageUrl ? (
@@ -1121,7 +1133,10 @@ export default function CourseWorkspacePage({
                       {announcement.createdBy.fullName}
                     </p>
                     {canManage ? (
-                      <div className="mt-4">
+                      <div className="mt-4 flex flex-wrap gap-3">
+                        {!announcement.reads.length ? (
+                          <MarkAnnouncementReadButton announcementId={announcement.id} />
+                        ) : null}
                         <ApiActionButton
                           action={`/api/announcements/${announcement.id}`}
                           method="DELETE"
@@ -1131,6 +1146,10 @@ export default function CourseWorkspacePage({
                           tone="danger"
                           confirmMessage={`Delete announcement "${announcement.title}"?`}
                         />
+                      </div>
+                    ) : !announcement.reads.length ? (
+                      <div className="mt-4">
+                        <MarkAnnouncementReadButton announcementId={announcement.id} />
                       </div>
                     ) : null}
                   </article>
