@@ -232,11 +232,12 @@ export default function LessonContentPage({
           <div className="space-y-4">
             <div className="flex flex-wrap items-center gap-2">
               <Badge tone="purple">{lesson.title}</Badge>
-              <Badge tone="slate">Page</Badge>
+              <Badge tone="slate">Page {pageIndex + 1} of {lesson.pages.length}</Badge>
               <Badge tone="slate">{formatEstimatedDuration(page.estimatedDurationMinutes)}</Badge>
             </div>
             {session.role === "STUDENT" ? (
               <PageCompletionTracker
+                key={page.id}
                 lessonPageId={page.id}
                 estimatedDurationMinutes={page.estimatedDurationMinutes}
                 initialTimeSpentSeconds={page.progress[0]?.timeSpentSeconds ?? 0}
@@ -310,6 +311,7 @@ export default function LessonContentPage({
       {canManage ? (
         <Panel title="Edit Module Page" subtitle="Update the page body with headings, lists, tables, links, and embeds.">
           <ApiForm
+            key={page.id}
             action={`/api/lesson-pages/${page.id}`}
             method="PATCH"
             submitLabel="Save page"

@@ -28,6 +28,13 @@ export default function PageCompletionTracker({
     [estimatedDurationMinutes],
   );
 
+  useEffect(() => {
+    setSavedTimeSpentSeconds(initialTimeSpentSeconds);
+    setCompleted(initiallyCompleted);
+    setSaving(false);
+    updatePending(0);
+  }, [initialTimeSpentSeconds, initiallyCompleted, lessonPageId]);
+
   function updatePending(nextValue: number) {
     pendingSecondsRef.current = nextValue;
     setPendingSeconds(nextValue);
