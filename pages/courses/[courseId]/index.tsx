@@ -268,6 +268,20 @@ export async function getServerSideProps(
               fullName: true,
               email: true,
               studentId: true,
+              lessonPageProgress: {
+                where: {
+                  completed: true,
+                  lessonPage: {
+                    lesson: {
+                      courseId,
+                      status: "PUBLISHED",
+                    },
+                  },
+                },
+                select: {
+                  id: true,
+                },
+              },
             },
           },
         },
@@ -359,6 +373,9 @@ export default function CourseWorkspacePage({
         )
       : 0;
   const courseProgress = calculateCourseProgress(completedCoursePages, totalCoursePages);
+  const managedStudentTotalPages = course.lessons
+    .filter((lesson: any) => lesson.status === "PUBLISHED")
+    .reduce((total: number, lesson: any) => total + lesson.pages.length, 0);
 
   function toggleComposer(composer: Exclude<CourseComposer, null>) {
     setActiveComposer((currentComposer) => (currentComposer === composer ? null : composer));
@@ -478,6 +495,32 @@ export default function CourseWorkspacePage({
                           <p className="font-semibold text-slate-950">{enrollment.student.fullName}</p>
                           <p className="mt-1 text-sm text-slate-600">{enrollment.student.email}</p>
                           <p className="mt-1 text-sm text-slate-600">{enrollment.student.studentId ?? "No student ID"}</p>
+                          {canManage ? (
+                            <div className="mt-3 space-y-2">
+                              <div className="flex flex-wrap items-center gap-2">
+                                <Badge tone="slate">
+                                  {calculateCourseProgress(
+                                    enrollment.student.lessonPageProgress.length,
+                                    managedStudentTotalPages,
+                                  ).percentage}% progress
+                                </Badge>
+                                <Badge tone="purple">
+                                  {enrollment.student.lessonPageProgress.length} of {managedStudentTotalPages} pages done
+                                </Badge>
+                              </div>
+                              <div className="h-2 overflow-hidden rounded-full bg-[#f1e8ff]">
+                                <div
+                                  className="h-full rounded-full bg-[linear-gradient(135deg,#159957,#38ef7d)] transition-all"
+                                  style={{
+                                    width: `${calculateCourseProgress(
+                                      enrollment.student.lessonPageProgress.length,
+                                      managedStudentTotalPages,
+                                    ).percentage}%`,
+                                  }}
+                                />
+                              </div>
+                            </div>
+                          ) : null}
                         </div>
                         {canManage ? (
                           <ApiActionButton
