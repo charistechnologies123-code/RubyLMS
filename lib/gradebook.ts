@@ -69,6 +69,61 @@ function parseCsvLine(line: string) {
   return values;
 }
 
+function roundGradebookScore(score: number) {
+  return Math.round((score + Number.EPSILON) * 100) / 100;
+}
+
+function hasPositiveScore(value: number | null | undefined): value is number {
+  return typeof value === "number" && Number.isFinite(value) && value > 0;
+}
+
+export function normalizeImportedScore(args: {
+  rawScore: number | null | undefined;
+  targetMaxScore: number | null | undefined;
+  sourceMaxScore?: number | null | undefined;
+}) {
+  const { rawScore, targetMaxScore, sourceMaxScore } = args;
+
+  if (typeof rawScore !== "number" || Number.isNaN(rawScore)) {
+    return null;
+  }
+
+  if (!hasPositiveScore(targetMaxScore)) {
+    return rawScore;
+  }
+
+  if (hasPositiveScore(sourceMaxScore)) {
+    return roundGradebookScore((rawScore / sourceMaxScore) * targetMaxScore);
+  }
+
+  if (rawScore > targetMaxScore) {
+    return roundGradebookScore((rawScore / 100) * targetMaxScore);
+  }
+
+  return rawScore;
+}
+
+function getQuizSourceMaxScore(quiz: {
+  totalMarks: number | null;
+  quizQuestions: Array<{
+    marksOverride: number | null;
+    questionBank: {
+      marks: number;
+    };
+  }>;
+}) {
+  if (hasPositiveScore(quiz.totalMarks)) {
+    return quiz.totalMarks;
+  }
+
+  const totalFromQuestions = quiz.quizQuestions.reduce((sum, question) => {
+    const marks = question.marksOverride ?? question.questionBank.marks;
+    return sum + (Number.isFinite(marks) ? marks : 0);
+  }, 0);
+
+  return hasPositiveScore(totalFromQuestions) ? totalFromQuestions : null;
+}
+
 export function parseGradeCsv(csv: string) {
   const lines = csv
     .split(/\r?\n/)
@@ -219,7 +274,27 @@ export async function importGradebookColumnFromQuiz(args: {
   columnId: string;
   quizId: string;
 }) {
-  const [studentIds, attempts] = await Promise.all([
+  const [column, quiz, studentIds, attempts] = await Promise.all([
+    prisma.gradebookColumn.findUnique({
+      where: { id: args.columnId },
+      select: { maxScore: true },
+    }),
+    prisma.quiz.findUnique({
+      where: { id: args.quizId },
+      select: {
+        totalMarks: true,
+        quizQuestions: {
+          select: {
+            marksOverride: true,
+            questionBank: {
+              select: {
+                marks: true,
+              },
+            },
+          },
+        },
+      },
+    }),
     getEnrolledStudentIds(args.courseId),
     prisma.quizAttempt.findMany({
       where: {
@@ -229,6 +304,9 @@ export async function importGradebookColumnFromQuiz(args: {
       orderBy: [{ studentId: "asc" }, { score: "desc" }, { submittedAt: "desc" }],
     }),
   ]);
+
+  const targetMaxScore = column?.maxScore ?? null;
+  const sourceMaxScore = quiz ? getQuizSourceMaxScore(quiz) : null;
 
   const bestAttemptByStudent = new Map<string, (typeof attempts)[number]>();
 
@@ -250,7 +328,11 @@ export async function importGradebookColumnFromQuiz(args: {
           },
         },
         update: {
-          score: attempt?.score ?? null,
+          score: normalizeImportedScore({
+            rawScore: attempt?.score,
+            targetMaxScore,
+            sourceMaxScore,
+          }),
           selectedQuizAttemptId: attempt?.id ?? null,
           selectedAssignmentSubmissionId: null,
         },
@@ -258,7 +340,11 @@ export async function importGradebookColumnFromQuiz(args: {
           courseId: args.courseId,
           columnId: args.columnId,
           studentId,
-          score: attempt?.score ?? null,
+          score: normalizeImportedScore({
+            rawScore: attempt?.score,
+            targetMaxScore,
+            sourceMaxScore,
+          }),
           selectedQuizAttemptId: attempt?.id ?? null,
         },
       });
@@ -271,7 +357,11 @@ export async function importGradebookColumnFromAssignment(args: {
   columnId: string;
   assignmentId: string;
 }) {
-  const [studentIds, submissions] = await Promise.all([
+  const [column, studentIds, submissions] = await Promise.all([
+    prisma.gradebookColumn.findUnique({
+      where: { id: args.columnId },
+      select: { maxScore: true },
+    }),
     getEnrolledStudentIds(args.courseId),
     prisma.assignmentSubmission.findMany({
       where: {
@@ -283,6 +373,8 @@ export async function importGradebookColumnFromAssignment(args: {
       orderBy: [{ studentId: "asc" }, { gradedAt: "desc" }, { submittedAt: "desc" }],
     }),
   ]);
+
+  const targetMaxScore = column?.maxScore ?? null;
 
   const bestSubmissionByStudent = new Map<string, (typeof submissions)[number]>();
 
@@ -304,7 +396,10 @@ export async function importGradebookColumnFromAssignment(args: {
           },
         },
         update: {
-          score: submission?.score ?? null,
+          score: normalizeImportedScore({
+            rawScore: submission?.score,
+            targetMaxScore,
+          }),
           selectedQuizAttemptId: null,
           selectedAssignmentSubmissionId: submission?.id ?? null,
         },
@@ -312,7 +407,10 @@ export async function importGradebookColumnFromAssignment(args: {
           courseId: args.courseId,
           columnId: args.columnId,
           studentId,
-          score: submission?.score ?? null,
+          score: normalizeImportedScore({
+            rawScore: submission?.score,
+            targetMaxScore,
+          }),
           selectedAssignmentSubmissionId: submission?.id ?? null,
         },
       });

@@ -2,6 +2,7 @@ import type { NextApiResponse } from "next";
 import { prisma } from "@/lib/prisma";
 import { withApiAuth, type AuthedNextApiRequest } from "@/lib/api";
 import { getManagedCourseWhere } from "@/lib/courseManagers";
+import { normalizeImportedScore } from "@/lib/gradebook";
 
 async function handler(req: AuthedNextApiRequest, res: NextApiResponse) {
   if (req.method !== "PATCH") {
@@ -37,11 +38,36 @@ async function handler(req: AuthedNextApiRequest, res: NextApiResponse) {
       studentId,
       isSubmitted: true,
     },
+    include: {
+      quiz: {
+        select: {
+          totalMarks: true,
+          quizQuestions: {
+            select: {
+              marksOverride: true,
+              questionBank: {
+                select: {
+                  marks: true,
+                },
+              },
+            },
+          },
+        },
+      },
+    },
   });
 
   if (!attempt) {
     return res.status(404).json({ error: "Quiz attempt not found." });
   }
+
+  const sourceMaxScore =
+    typeof attempt.quiz.totalMarks === "number" && attempt.quiz.totalMarks > 0
+      ? attempt.quiz.totalMarks
+      : attempt.quiz.quizQuestions.reduce((sum, question) => {
+          const marks = question.marksOverride ?? question.questionBank.marks;
+          return sum + (Number.isFinite(marks) ? marks : 0);
+        }, 0) || null;
 
   const cell = await prisma.gradebookCell.upsert({
     where: {
@@ -51,7 +77,11 @@ async function handler(req: AuthedNextApiRequest, res: NextApiResponse) {
       },
     },
     update: {
-      score: attempt.score ?? null,
+      score: normalizeImportedScore({
+        rawScore: attempt.score,
+        targetMaxScore: column.maxScore,
+        sourceMaxScore,
+      }),
       selectedQuizAttemptId: attempt.id,
       selectedAssignmentSubmissionId: null,
     },
@@ -59,7 +89,11 @@ async function handler(req: AuthedNextApiRequest, res: NextApiResponse) {
       courseId: column.courseId,
       columnId,
       studentId,
-      score: attempt.score ?? null,
+      score: normalizeImportedScore({
+        rawScore: attempt.score,
+        targetMaxScore: column.maxScore,
+        sourceMaxScore,
+      }),
       selectedQuizAttemptId: attempt.id,
     },
   });
