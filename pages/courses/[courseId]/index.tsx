@@ -14,35 +14,13 @@ import FormField from "@/components/ui/FormField";
 import ImageUploadField from "@/components/ui/ImageUploadField";
 import MarkAnnouncementReadButton from "@/components/ui/MarkAnnouncementReadButton";
 import Panel from "@/components/ui/Panel";
-import QuizBuilderField from "@/components/ui/QuizBuilderField";
 import { calculateCourseProgress } from "@/lib/courseProgress";
 import { getManagedCourseWhere } from "@/lib/courseManagers";
 import { assertRoleAccess, getDefaultRouteForRole, getSessionFromPageContext } from "@/lib/auth";
 import { formatDate, formatShortDate } from "@/lib/format";
-import { canStudentSubmitBeforeDueDate } from "@/lib/lms";
 import { canManageCourse } from "@/lib/permissions";
 import { prisma } from "@/lib/prisma";
 import { serialize } from "@/lib/serialize";
-
-type QuizOption = {
-  id: string;
-  optionText: string;
-  isCorrect: boolean;
-};
-
-type QuizQuestionView = {
-  id: string;
-  questionBank: {
-    questionText: string;
-    options: QuizOption[];
-  };
-};
-
-type QuizAttemptView = {
-  id: string;
-  attemptNumber: number;
-  score: number | null;
-};
 
 type CourseWorkspaceProps = {
   session: NonNullable<ReturnType<typeof getSessionFromPageContext>>;
@@ -54,8 +32,6 @@ type CourseComposer =
   | "course"
   | "module"
   | "resource"
-  | "assignment"
-  | "quiz"
   | "announcement"
   | "question"
   | null;
@@ -143,81 +119,10 @@ export async function getServerSideProps(
         },
       },
       resources: {
+        where: {
+          lessonId: null,
+        },
         orderBy: { createdAt: "desc" },
-        include: {
-          lesson: {
-            select: {
-              id: true,
-              title: true,
-            },
-          },
-        },
-      },
-      assignments: {
-        where:
-          session.role === "STUDENT"
-            ? {
-                status: "PUBLISHED",
-                OR: [{ lessonId: null }, { lesson: { status: "PUBLISHED" } }],
-              }
-            : undefined,
-        orderBy: [{ dueAt: "asc" }, { createdAt: "desc" }],
-        include: {
-          lesson: {
-            select: {
-              id: true,
-              title: true,
-            },
-          },
-          submissions:
-            session.role === "STUDENT"
-              ? {
-                  where: { studentId: session.userId },
-                }
-              : {
-                  include: {
-                    student: {
-                      select: {
-                        fullName: true,
-                        studentId: true,
-                      },
-                    },
-                  },
-                },
-        },
-      },
-      quizzes: {
-        where:
-          session.role === "STUDENT"
-            ? {
-                status: "PUBLISHED",
-                archivedAt: null,
-                OR: [{ lessonId: null }, { lesson: { status: "PUBLISHED" } }],
-              }
-            : { archivedAt: null },
-        orderBy: { createdAt: "desc" },
-        include: {
-          lesson: {
-            select: {
-              id: true,
-              title: true,
-            },
-          },
-          quizQuestions: {
-            orderBy: { order: "asc" },
-            include: {
-              questionBank: {
-                include: {
-                  options: { orderBy: { order: "asc" } },
-                },
-              },
-            },
-          },
-          attempts:
-            session.role === "STUDENT"
-              ? { where: { studentId: session.userId }, orderBy: { attemptNumber: "desc" } }
-              : false,
-        },
       },
       announcements: {
         orderBy: { createdAt: "desc" },
@@ -338,31 +243,6 @@ export default function CourseWorkspacePage({
   );
   const [activeComposer, setActiveComposer] = useState<CourseComposer>(null);
   const [activeReplyQuestionId, setActiveReplyQuestionId] = useState<string | null>(null);
-  const [activeSubmissionAssignmentId, setActiveSubmissionAssignmentId] = useState<string | null>(null);
-  const studentQuizzes = course.quizzes as Array<
-    (typeof course.quizzes)[number] & {
-      quizQuestions: QuizQuestionView[];
-      attempts: QuizAttemptView[];
-    }
-  >;
-  const managedAssignments = course.assignments as Array<
-    (typeof course.assignments)[number] & {
-      submissions: Array<{
-        id: string;
-        score: number | null;
-        feedback: string | null;
-        textSubmission: string | null;
-        linkUrl: string | null;
-        fileUrl: string | null;
-        submittedAt: string;
-        gradedAt: string | null;
-        student: {
-          fullName: string;
-          studentId: string | null;
-        };
-      }>;
-    }
-  >;
   const totalCoursePages = course.lessons.reduce((total: number, lesson: any) => total + lesson.pages.length, 0);
   const completedCoursePages =
     session.role === "STUDENT"
@@ -464,8 +344,6 @@ export default function CourseWorkspacePage({
               ["Overview", "#overview"],
               ["Modules", "#lessons"],
               ["Resources", "#resources"],
-              ["Assignments", "#assignments"],
-              ["Quizzes", "#quizzes"],
               ["Announcements", "#announcements"],
               ["Q&A", "#qa"],
             ].map(([label, href]) => (
@@ -719,7 +597,7 @@ export default function CourseWorkspacePage({
           </div>
         </Panel>
 
-        <Panel id="resources" title="Resources" subtitle="Course files and links can live at course level or attach to a lesson.">
+        <Panel id="resources" title="Resources" subtitle="Course files and links live here at the course level.">
           <div className="grid gap-6 lg:grid-cols-[1.1fr_0.9fr]">
             <div className="space-y-3">
               {course.resources.length ? (
@@ -727,7 +605,6 @@ export default function CourseWorkspacePage({
                   <div key={resource.id} className="rounded-[22px] border border-[#efe6ff] bg-white p-4">
                     <div className="flex flex-wrap items-center gap-2">
                       <Badge tone="purple">{resource.type}</Badge>
-                      <Badge tone="slate">{resource.lesson?.title ?? "General course resource"}</Badge>
                     </div>
                     <p className="mt-3 font-semibold text-slate-950">{resource.title}</p>
                     {resource.externalUrl ? (
@@ -770,20 +647,7 @@ export default function CourseWorkspacePage({
                     >
                       <input type="hidden" name="courseId" value={course.id} />
                       <FormField label="Resource title" name="title" required />
-                      <FormField
-                        label="Attach to lesson"
-                        name="lessonId"
-                        as="select"
-                        defaultValue=""
-                        options={[
-                          { label: "General course resource", value: "" },
-                          ...course.lessons.map((lesson: any) => ({
-                            label: lesson.title,
-                            value: lesson.id,
-                          })),
-                        ]}
-                      />
-                      <FormField
+                    <FormField
                         label="Type"
                         name="type"
                         as="select"
@@ -809,343 +673,6 @@ export default function CourseWorkspacePage({
                 ) : null}
               </div>
             ) : null}
-          </div>
-        </Panel>
-
-        <Panel id="assignments" title="Assignments" subtitle="Assignments are now visibly tied to this course instead of living in one shared feed.">
-          <div className="space-y-6">
-            {canManage ? (
-              <div className="space-y-4">
-                <button type="button" onClick={() => toggleComposer("assignment")} className={getComposerButtonClass("assignment")}>
-                  {activeComposer === "assignment" ? "Close Assignment Builder" : "Add Assignment"}
-                </button>
-
-                {activeComposer === "assignment" ? (
-                  <div className="rounded-[24px] border border-[#e8ddff] bg-[#fcfaff] p-5">
-                    <ApiForm
-                      action="/api/assignments"
-                      submitLabel="Create assignment"
-                      successMessage="Assignment created."
-                      className="grid gap-4 md:grid-cols-2"
-                      onSuccess={() => setActiveComposer(null)}
-                    >
-                      <input type="hidden" name="courseId" value={course.id} />
-                      <FormField
-                        label="Attach to module"
-                        name="lessonId"
-                        as="select"
-                        defaultValue=""
-                        options={[
-                          { label: "General course assignment", value: "" },
-                          ...course.lessons.map((lesson: any) => ({
-                            label: lesson.title,
-                            value: lesson.id,
-                          })),
-                        ]}
-                      />
-                      <FormField label="Title" name="title" required />
-                      <FormField
-                        label="Submission type"
-                        name="submissionType"
-                        as="select"
-                        defaultValue="FILE"
-                        options={[
-                          { label: "File", value: "FILE" },
-                          { label: "Link", value: "LINK" },
-                          { label: "Text", value: "TEXT" },
-                        ]}
-                      />
-                      <FormField
-                        label="Status"
-                        name="status"
-                        as="select"
-                        defaultValue="DRAFT"
-                        options={[
-                          { label: "Draft", value: "DRAFT" },
-                          { label: "Published", value: "PUBLISHED" },
-                        ]}
-                      />
-                      <FormField label="Due date" name="dueAt" type="datetime-local" />
-                      <div className="md:col-span-2">
-                        <FormField label="Description" name="description" as="textarea" required />
-                      </div>
-                      <div className="md:col-span-2">
-                        <FormField label="Instructions" name="instructions" as="textarea" />
-                      </div>
-                      <div className="md:col-span-2">
-                        <FileUploadField
-                          label="Assignment attachment"
-                          name="attachmentUrl"
-                          helperText="Upload a PDF, DOC, DOCX, TXT, CSV, or image."
-                        />
-                      </div>
-                    </ApiForm>
-                  </div>
-                ) : null}
-              </div>
-            ) : null}
-
-            {!course.assignments.length ? (
-              <EmptyState title="No assignments yet" description="Assignments created for this course will appear here." />
-            ) : (
-              course.assignments.map((assignment: any) => (
-                <div key={assignment.id} className="rounded-[24px] border border-[#efe6ff] bg-white p-5">
-                  <div className="flex flex-wrap items-center gap-2">
-                    <Badge tone="purple">{assignment.submissionType}</Badge>
-                    <Badge tone="slate">{assignment.lesson?.title ?? "General course assignment"}</Badge>
-                    <Badge tone="red">Due {formatDate(assignment.dueAt)}</Badge>
-                  </div>
-                  <p className="mt-3 font-heading text-xl text-slate-950">{assignment.title}</p>
-                  <p className="mt-2 text-sm text-slate-600">{assignment.description}</p>
-
-                  {session.role === "STUDENT" ? (
-                    <div className="mt-5 grid gap-5 lg:grid-cols-[1.1fr_0.9fr]">
-                      <div className="rounded-[22px] bg-[#faf7ff] p-4">
-                        <p className="font-semibold text-slate-950">Instructions</p>
-                        <p className="mt-2 text-sm text-slate-600">{assignment.instructions || "No extra instructions provided."}</p>
-                      </div>
-                      <div className="space-y-4">
-                        <button
-                          type="button"
-                          onClick={() => {
-                            if (!canStudentSubmitBeforeDueDate(assignment.dueAt ? new Date(assignment.dueAt) : null)) {
-                              toast.error("The due date for this assignment has passed.");
-                              return;
-                            }
-
-                            setActiveSubmissionAssignmentId((currentAssignmentId) =>
-                              currentAssignmentId === assignment.id ? null : assignment.id,
-                            );
-                          }}
-                          className={`rounded-2xl px-4 py-3 text-sm font-semibold transition ${
-                            activeSubmissionAssignmentId === assignment.id
-                              ? "bg-[linear-gradient(135deg,#6b00ff,#8c3cff)] text-white"
-                              : "border border-[#e8ddff] bg-white text-[#6b00ff]"
-                          }`}
-                        >
-                          {activeSubmissionAssignmentId === assignment.id
-                            ? "Close Submission Form"
-                            : assignment.submissions.length
-                              ? "Update Submission"
-                              : "Start Submission"}
-                        </button>
-
-                        {!canStudentSubmitBeforeDueDate(assignment.dueAt ? new Date(assignment.dueAt) : null) ? (
-                          <p className="text-sm text-[#b42318]">This assignment is closed because the due date has passed.</p>
-                        ) : null}
-
-                        {activeSubmissionAssignmentId === assignment.id &&
-                        canStudentSubmitBeforeDueDate(assignment.dueAt ? new Date(assignment.dueAt) : null) ? (
-                          <div className="rounded-[24px] border border-[#e8ddff] bg-[#fcfaff] p-5">
-                            <ApiForm
-                              action="/api/assignments/submit"
-                              submitLabel={assignment.submissions.length ? "Update submission" : "Submit assignment"}
-                              successMessage="Assignment submitted."
-                              className="grid gap-3"
-                              onSuccess={() => setActiveSubmissionAssignmentId(null)}
-                            >
-                              <input type="hidden" name="assignmentId" value={assignment.id} />
-                              <FileUploadField
-                                label="Submission file"
-                                name="fileUrl"
-                                helperText="Upload your submission file or leave empty if you are submitting by link or text."
-                              />
-                              <FormField label="Link URL" name="linkUrl" placeholder="https://..." />
-                              <FormField label="Text submission" name="textSubmission" as="textarea" />
-                            </ApiForm>
-                          </div>
-                        ) : null}
-                      </div>
-                    </div>
-                  ) : (
-                    <div className="mt-5 space-y-3">
-                      {!assignment.submissions.length ? (
-                        <EmptyState title="No submissions yet" description="Submissions will appear here after students respond." />
-                      ) : (
-                        managedAssignments
-                          .find((currentAssignment: any) => currentAssignment.id === assignment.id)!
-                          .submissions.map((submission: any) => (
-                            <div key={submission.id} className="rounded-[22px] bg-[#faf7ff] p-4">
-                              <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
-                                <div>
-                                  <p className="font-semibold text-slate-950">{submission.student.fullName}</p>
-                                  <p className="text-sm text-slate-600">{submission.student.studentId ?? "No ID"}</p>
-                                  <p className="mt-1 text-sm text-slate-600">Submitted {formatDate(submission.submittedAt)}</p>
-                                  {submission.gradedAt ? <p className="mt-1 text-sm text-slate-600">Graded {formatDate(submission.gradedAt)}</p> : null}
-                                  {submission.textSubmission ? <p className="mt-2 text-sm text-slate-600">{submission.textSubmission}</p> : null}
-                                  {submission.linkUrl ? (
-                                    <a href={submission.linkUrl} target="_blank" rel="noreferrer" className="mt-2 inline-flex text-sm font-semibold text-[#6b00ff]">
-                                      Open submitted link
-                                    </a>
-                                  ) : null}
-                                  {submission.fileUrl ? (
-                                    <div className="mt-3">
-                                      <FileDisplay url={submission.fileUrl} title="Submission file" />
-                                    </div>
-                                  ) : null}
-                                  {!submission.textSubmission && !submission.linkUrl && !submission.fileUrl ? (
-                                    <p className="mt-2 text-sm text-slate-600">Submission recorded</p>
-                                  ) : null}
-                                </div>
-                                <div className="min-w-[280px]">
-                                  <ApiForm
-                                    action="/api/assignments/grade"
-                                    submitLabel="Save grade"
-                                    successMessage="Grade saved."
-                                    className="grid gap-3"
-                                  >
-                                    <input type="hidden" name="submissionId" value={submission.id} />
-                                    <FormField label="Score" name="score" type="number" defaultValue={submission.score ?? ""} />
-                                    <FormField label="Feedback" name="feedback" as="textarea" defaultValue={submission.feedback ?? ""} />
-                                  </ApiForm>
-                                </div>
-                              </div>
-                            </div>
-                          ))
-                      )}
-                    </div>
-                  )}
-                </div>
-              ))
-            )}
-          </div>
-        </Panel>
-
-        <Panel id="quizzes" title="Quizzes" subtitle="Course-scoped quizzes live here with creation, question setup, and student attempts.">
-          <div className="space-y-6">
-            {canManage ? (
-              <div className="space-y-4">
-                <button type="button" onClick={() => toggleComposer("quiz")} className={getComposerButtonClass("quiz")}>
-                  {activeComposer === "quiz" ? "Close Quiz Builder" : "Add Quiz"}
-                </button>
-
-                {activeComposer === "quiz" ? (
-                  <div className="rounded-[24px] border border-[#e8ddff] bg-[#fcfaff] p-5">
-                    <ApiForm
-                      action="/api/quizzes"
-                      submitLabel="Create quiz"
-                      successMessage="Quiz created."
-                      className="grid gap-4 md:grid-cols-2"
-                      onSuccess={() => setActiveComposer(null)}
-                    >
-                      <input type="hidden" name="courseId" value={course.id} />
-                      <FormField
-                        label="Attach to module"
-                        name="lessonId"
-                        as="select"
-                        defaultValue=""
-                        options={[
-                          { label: "General course quiz", value: "" },
-                          ...course.lessons.map((lesson: any) => ({
-                            label: lesson.title,
-                            value: lesson.id,
-                          })),
-                        ]}
-                      />
-                      <FormField label="Title" name="title" required />
-                      <FormField label="Time limit (minutes)" name="timeLimitMinutes" type="number" defaultValue="20" required />
-                      <FormField label="Max attempts" name="maxAttempts" type="number" defaultValue="1" />
-                      <FormField
-                        label="Status"
-                        name="status"
-                        as="select"
-                        defaultValue="DRAFT"
-                        options={[
-                          { label: "Draft", value: "DRAFT" },
-                          { label: "Published", value: "PUBLISHED" },
-                        ]}
-                      />
-                      <FormField label="Due date" name="dueAt" type="datetime-local" />
-                      <div className="md:col-span-2">
-                        <FormField label="Description" name="description" as="textarea" />
-                      </div>
-                      <div className="md:col-span-2">
-                        <FormField label="Instructions" name="instructions" as="textarea" />
-                      </div>
-                      <QuizBuilderField />
-                    </ApiForm>
-                  </div>
-                ) : null}
-              </div>
-            ) : null}
-
-            {!course.quizzes.length ? (
-              <EmptyState title="No quizzes yet" description="Quizzes added to this course will appear here." />
-            ) : (
-              course.quizzes.map((quiz: any) => {
-                const studentQuiz = studentQuizzes.find((currentQuiz: any) => currentQuiz.id === quiz.id);
-
-                return (
-                  <div key={quiz.id} className="rounded-[24px] border border-[#efe6ff] bg-white p-5">
-                    <div className="flex flex-wrap items-center gap-2">
-                      <Badge tone="slate">{quiz.timeLimitMinutes} min</Badge>
-                      <Badge tone="slate">{quiz.maxAttempts} attempt(s)</Badge>
-                      <Badge tone="slate">{quiz.lesson?.title ?? "General course quiz"}</Badge>
-                      <Badge tone={quiz.status === "PUBLISHED" ? "green" : "purple"}>{quiz.status}</Badge>
-                    </div>
-                    <p className="mt-3 font-heading text-xl text-slate-950">{quiz.title}</p>
-                    <p className="mt-2 text-sm text-slate-600">{quiz.description || "Timed quiz assessment"}</p>
-
-                    {session.role === "STUDENT" && studentQuiz ? (
-                      <div className="mt-5 grid gap-5 lg:grid-cols-[1.1fr_0.9fr]">
-                        <div className="rounded-[24px] border border-[#efe6ff] bg-[#fcfaff] p-5">
-                          <p className="font-semibold text-slate-950">Take Quiz</p>
-                          <p className="mt-2 text-sm text-slate-600">
-                            Open the quiz in a dedicated page for the countdown timer, question navigation, and progress tracking.
-                          </p>
-                          <Link
-                            href={`/quizzes/${quiz.id}`}
-                            className="mt-4 inline-flex rounded-2xl bg-[linear-gradient(135deg,#6b00ff,#8c3cff)] px-5 py-3 text-sm font-semibold text-white"
-                          >
-                            Open quiz
-                          </Link>
-                        </div>
-                        <div className="rounded-[24px] bg-[#fff8f8] p-4">
-                          <p className="font-semibold text-slate-950">Attempt history</p>
-                          <div className="mt-3 space-y-3">
-                            {studentQuiz.attempts.length ? (
-                              studentQuiz.attempts.map((attempt: any) => (
-                                <div key={attempt.id} className="rounded-[20px] bg-white p-3">
-                                  <p className="text-sm font-semibold text-slate-950">Attempt {attempt.attemptNumber}</p>
-                                  <p className="mt-1 text-sm text-slate-600">
-                                    {typeof attempt.score === "number" ? `${attempt.score} points` : "Awaiting score"}
-                                  </p>
-                                </div>
-                              ))
-                            ) : (
-                              <p className="text-sm text-slate-600">No attempts recorded yet.</p>
-                            )}
-                          </div>
-                        </div>
-                      </div>
-                    ) : (
-                      <div className="mt-5 space-y-3">
-                          <Link
-                            href={`/quizzes/${quiz.id}?mode=manage`}
-                            className="inline-flex rounded-2xl border border-[#e8ddff] bg-[#faf7ff] px-4 py-3 text-sm font-semibold text-[#6b00ff]"
-                          >
-                            Open quiz workspace
-                        </Link>
-                        {quiz.quizQuestions.map((question: any, index: number) => (
-                          <div key={question.id} className="rounded-[22px] bg-[#faf7ff] p-4">
-                            <p className="font-semibold text-slate-950">
-                              {index + 1}. {question.questionBank.questionText}
-                            </p>
-                            <div className="mt-3 grid gap-2">
-                              {question.questionBank.options.map((option: any) => (
-                                <div key={option.id} className="rounded-2xl bg-white px-4 py-3 text-sm text-slate-700">
-                                  {option.optionText} {option.isCorrect ? " - Correct" : ""}
-                                </div>
-                              ))}
-                            </div>
-                          </div>
-                        ))}
-                      </div>
-                    )}
-                  </div>
-                );
-              })
-            )}
           </div>
         </Panel>
 
@@ -1352,3 +879,4 @@ export default function CourseWorkspacePage({
     </DashboardLayout>
   );
 }
+

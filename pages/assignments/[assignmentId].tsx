@@ -1,5 +1,6 @@
 import type { GetServerSidePropsContext, InferGetServerSidePropsType } from "next";
 import Link from "next/link";
+import { useState } from "react";
 import DashboardLayout from "@/components/dashboard/DashboardLayout";
 import ApiForm from "@/components/ui/ApiForm";
 import Badge from "@/components/ui/Badge";
@@ -73,6 +74,8 @@ export default function AssignmentSubmissionsPage({
   session,
   assignment,
 }: InferGetServerSidePropsType<typeof getServerSideProps>) {
+  const [showSubmissions, setShowSubmissions] = useState(false);
+
   if (!assignment) {
     return null;
   }
@@ -82,7 +85,7 @@ export default function AssignmentSubmissionsPage({
       role={session.role}
       session={session}
       title={`${assignment.title} Submissions`}
-      description="Review student submissions, see submission details and times, grade work, and give feedback."
+      description="Open the submissions view when you’re ready to review work, grade, and leave feedback."
     >
       <div className="space-y-6">
         <Panel title={assignment.title} subtitle={assignment.course.title}>
@@ -97,14 +100,26 @@ export default function AssignmentSubmissionsPage({
             <Link
               href="/assignments"
               className="inline-flex rounded-2xl border border-[#e8ddff] bg-white px-5 py-3 text-sm font-semibold text-slate-700"
+              >
+                Back to assignments
+              </Link>
+            <button
+              type="button"
+              onClick={() => setShowSubmissions((current) => !current)}
+              className="inline-flex rounded-2xl bg-[linear-gradient(135deg,#6b00ff,#8c3cff)] px-5 py-3 text-sm font-semibold text-white"
             >
-              Back to assignments
-            </Link>
+              {showSubmissions ? "Hide submissions" : "View submissions"}
+            </button>
           </div>
         </Panel>
 
-        <Panel title="Submissions" subtitle="Grade each submission here and leave feedback for students.">
-          {!assignment.submissions.length ? (
+        <Panel title="Submissions" subtitle="The review and grading tools appear after you open this section.">
+          {!showSubmissions ? (
+            <EmptyState
+              title="Submissions hidden"
+              description="Click View submissions to open student work, grading, and feedback."
+            />
+          ) : !assignment.submissions.length ? (
             <EmptyState title="No submissions yet" description="Student submissions will appear here after they respond." />
           ) : (
             <div className="space-y-3">

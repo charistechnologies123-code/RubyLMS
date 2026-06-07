@@ -13,18 +13,6 @@ async function handler(req: AuthedNextApiRequest, res: NextApiResponse) {
       orderBy: { createdAt: "desc" },
       include: {
         course: true,
-        quizQuestions: {
-          orderBy: { order: "asc" },
-          include: {
-            questionBank: {
-              include: {
-                options: {
-                  orderBy: { order: "asc" },
-                },
-              },
-            },
-          },
-        },
         attempts:
           req.session.role === "STUDENT"
             ? {
