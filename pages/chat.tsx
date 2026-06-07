@@ -43,6 +43,7 @@ type ChatProps = {
   rooms: ChatRoom[];
   selectedRoom: ChatRoom | null;
   users: ChatUser[];
+  loadError?: string | null;
 };
 
 function getRoomLabel(room: Pick<ChatRoom, "type" | "title" | "members">, currentUserId: string) {
@@ -77,56 +78,57 @@ export async function getServerSideProps(ctx: GetServerSidePropsContext) {
 
   const roomId = typeof ctx.query.roomId === "string" ? ctx.query.roomId : null;
 
-  const rooms = await prisma.chatRoom.findMany({
-    where: {
-      members: {
-        some: {
-          userId: session.userId,
+  try {
+    const rooms = await prisma.chatRoom.findMany({
+      where: {
+        members: {
+          some: {
+            userId: session.userId,
+          },
         },
       },
-    },
-    orderBy: [{ lastMessageAt: "desc" }, { updatedAt: "desc" }],
-    include: {
-      createdBy: {
-        select: {
-          id: true,
-          fullName: true,
-          avatarUrl: true,
-          role: true,
+      orderBy: [{ lastMessageAt: "desc" }, { updatedAt: "desc" }],
+      include: {
+        createdBy: {
+          select: {
+            id: true,
+            fullName: true,
+            avatarUrl: true,
+            role: true,
+          },
         },
-      },
-      members: {
-        include: {
-          user: {
-            select: {
-              id: true,
-              fullName: true,
-              avatarUrl: true,
-              role: true,
+        members: {
+          include: {
+            user: {
+              select: {
+                id: true,
+                fullName: true,
+                avatarUrl: true,
+                role: true,
+              },
+            },
+          },
+        },
+        messages: {
+          take: 1,
+          orderBy: { createdAt: "desc" },
+          include: {
+            sender: {
+              select: {
+                id: true,
+                fullName: true,
+                avatarUrl: true,
+                role: true,
+              },
             },
           },
         },
       },
-      messages: {
-        take: 1,
-        orderBy: { createdAt: "desc" },
-        include: {
-          sender: {
-            select: {
-              id: true,
-              fullName: true,
-              avatarUrl: true,
-              role: true,
-            },
-          },
-        },
-      },
-    },
-  });
+    });
 
-  const selectedRoomId = roomId ?? rooms[0]?.id ?? null;
-  const selectedRoom = selectedRoomId
-    ? await prisma.chatRoom.findFirst({
+    const selectedRoomId = roomId ?? rooms[0]?.id ?? null;
+    const selectedRoom = selectedRoomId
+      ? await prisma.chatRoom.findFirst({
         where: {
           id: selectedRoomId,
           members: {
@@ -171,34 +173,49 @@ export async function getServerSideProps(ctx: GetServerSidePropsContext) {
           },
         },
       })
-    : null;
+      : null;
 
-  const users = await prisma.user.findMany({
-    where: {
-      archivedAt: null,
-      id: {
-        not: session.userId,
+    const users = await prisma.user.findMany({
+      where: {
+        archivedAt: null,
+        id: {
+          not: session.userId,
+        },
       },
-    },
-    select: {
-      id: true,
-      fullName: true,
-      avatarUrl: true,
-      role: true,
-    },
-    orderBy: {
-      fullName: "asc",
-    },
-  });
+      select: {
+        id: true,
+        fullName: true,
+        avatarUrl: true,
+        role: true,
+      },
+      orderBy: {
+        fullName: "asc",
+      },
+    });
 
-  return {
-    props: {
-      session,
-      rooms: serialize(rooms),
-      selectedRoom: serialize(selectedRoom),
-      users: serialize(users),
-    },
-  };
+    return {
+      props: {
+        session,
+        rooms: serialize(rooms),
+        selectedRoom: serialize(selectedRoom),
+        users: serialize(users),
+        loadError: null,
+      },
+    };
+  } catch (error) {
+    return {
+      props: {
+        session,
+        rooms: [],
+        selectedRoom: null,
+        users: [],
+        loadError:
+          error instanceof Error
+            ? error.message
+            : "Chat storage is not ready yet. Please run the chat migration against Neon.",
+      },
+    };
+  }
 }
 
 export default function ChatPage({
@@ -206,6 +223,7 @@ export default function ChatPage({
   rooms,
   selectedRoom,
   users,
+  loadError,
 }: InferGetServerSidePropsType<typeof getServerSideProps>) {
   const router = useRouter();
   const selectedRoomId = selectedRoom?.id ?? null;
@@ -313,6 +331,12 @@ export default function ChatPage({
       title="Chat"
       description="Private and group chat live here so you can keep conversations separate from lessons and assessments."
     >
+      {loadError ? (
+        <Panel className="mb-6" title="Chat not ready yet" subtitle="The chat tables need to match the app schema.">
+          <p className="text-sm text-slate-700">{loadError}</p>
+        </Panel>
+      ) : null}
+
       <div className="grid gap-6 lg:grid-cols-[320px_1fr]">
         <Panel title="Rooms" subtitle="Select a private or group chat.">
           <div className="space-y-3">

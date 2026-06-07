@@ -23,34 +23,36 @@ export default function LoginPage() {
     event.preventDefault();
     setLoading(true);
 
-    const response = await fetch("/api/auth/login", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        email: identifier,
-        password,
-        role,
-      }),
-    });
+    try {
+      const response = await fetch("/api/auth/login", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          email: identifier,
+          password,
+          role,
+        }),
+      });
 
-    const result = await response.json().catch(() => ({}));
+      const result = await response.json().catch(() => ({}));
 
-    if (!response.ok) {
-      toast.error(result.error ?? "Login failed.");
+      if (!response.ok) {
+        toast.error(result.error ?? "Login failed.");
+        return;
+      }
+
+      const destination =
+        result.role === "ADMIN"
+          ? "/admin"
+          : result.role === "INSTRUCTOR"
+            ? "/instructor"
+            : "/student";
+
+      await router.push(destination);
+      toast.success(`Welcome back, ${result.fullName}.`);
+    } finally {
       setLoading(false);
-      return;
     }
-
-    const destination =
-      result.role === "ADMIN"
-        ? "/admin"
-        : result.role === "INSTRUCTOR"
-          ? "/instructor"
-          : "/student";
-
-    toast.success(`Welcome back, ${result.fullName}.`);
-    await router.push(destination);
-    setLoading(false);
   }
 
   return (

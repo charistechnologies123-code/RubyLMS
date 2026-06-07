@@ -49,15 +49,14 @@ function RouteLoader() {
   return (
     <div className="fixed inset-0 z-[80] flex items-center justify-center bg-[rgba(20,10,45,0.2)] px-4 backdrop-blur-sm">
       <div className="w-full max-w-sm rounded-[28px] border border-white/60 bg-white/90 p-6 shadow-[0_24px_80px_rgba(70,16,130,0.2)]">
-        <div className="flex items-center gap-3">
-          <div className="h-3 w-3 animate-pulse rounded-full bg-[#6b00ff]" />
-          <div className="h-3 w-3 animate-pulse rounded-full bg-[#8c3cff] [animation-delay:150ms]" />
-          <div className="h-3 w-3 animate-pulse rounded-full bg-[#ff6b6b] [animation-delay:300ms]" />
-        </div>
-        <p className="mt-4 font-heading text-xl text-slate-950">Loading workspace</p>
-        <p className="mt-2 text-sm text-slate-600">We’re getting your page ready with a smooth, lightweight transition.</p>
-        <div className="mt-5 h-2 overflow-hidden rounded-full bg-[#f1e8ff]">
-          <div className="h-full w-1/2 animate-pulse rounded-full bg-[linear-gradient(90deg,#6b00ff,#8c3cff,#ff6b6b)]" />
+        <div className="flex flex-col items-center gap-4">
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img src="/logo.svg" alt="Ruby LMS" className="h-10 w-auto" />
+          <div className="flex items-center gap-3">
+            <div className="h-3 w-3 animate-pulse rounded-full bg-[#6b00ff]" />
+            <div className="h-3 w-3 animate-pulse rounded-full bg-[#8c3cff] [animation-delay:150ms]" />
+            <div className="h-3 w-3 animate-pulse rounded-full bg-[#ff6b6b] [animation-delay:300ms]" />
+          </div>
         </div>
       </div>
     </div>

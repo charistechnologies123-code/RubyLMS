@@ -3,8 +3,9 @@ import { prisma } from "@/lib/prisma";
 import { withApiAuth, type AuthedNextApiRequest } from "@/lib/api";
 
 async function handler(req: AuthedNextApiRequest, res: NextApiResponse) {
-  if (req.method === "GET") {
-    const rooms = await prisma.chatRoom.findMany({
+  try {
+    if (req.method === "GET") {
+      const rooms = await prisma.chatRoom.findMany({
       where: {
         members: {
           some: {
@@ -51,11 +52,11 @@ async function handler(req: AuthedNextApiRequest, res: NextApiResponse) {
       },
     });
 
-    return res.status(200).json({ rooms });
-  }
+      return res.status(200).json({ rooms });
+    }
 
-  if (req.method === "POST") {
-    const { type, title, memberIds, recipientId } = req.body as {
+    if (req.method === "POST") {
+      const { type, title, memberIds, recipientId } = req.body as {
       type?: "DIRECT" | "GROUP";
       title?: string;
       memberIds?: string[] | string;
@@ -146,10 +147,18 @@ async function handler(req: AuthedNextApiRequest, res: NextApiResponse) {
       return res.status(201).json({ room });
     }
 
-    return res.status(400).json({ error: "Invalid chat room type." });
-  }
+      return res.status(400).json({ error: "Invalid chat room type." });
+    }
 
-  return res.status(405).json({ error: "Method not allowed" });
+    return res.status(405).json({ error: "Method not allowed" });
+  } catch (error) {
+    return res.status(500).json({
+      error:
+        error instanceof Error
+          ? error.message
+          : "Chat storage is not ready yet. Run the chat migration or align the Neon tables with the Prisma schema.",
+    });
+  }
 }
 
 export default withApiAuth(handler, ["ADMIN", "INSTRUCTOR", "STUDENT"]);
