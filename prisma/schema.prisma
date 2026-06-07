@@ -54,6 +54,11 @@ enum AssignmentStatus {
   PUBLISHED
 }
 
+enum ChatRoomType {
+  DIRECT
+  GROUP
+}
+
 enum QuestionType {
   SINGLE_CHOICE
   MULTIPLE_CHOICE
@@ -111,6 +116,9 @@ model User {
   createdGradebookColumns GradebookColumn[] @relation("GradebookColumnCreatedBy")
   gradebookCells      GradebookCell[]
   gradebookPublishes  GradebookPublication[] @relation("GradebookPublishedBy")
+  chatRoomsCreated    ChatRoom[]             @relation("ChatRoomCreatedBy")
+  chatMemberships     ChatMember[]
+  chatMessagesSent    ChatMessage[]          @relation("ChatMessageSender")
   notifications       Notification[]
   auditLogs           AuditLog[]             @relation("AuditLogActor")
 }
@@ -521,6 +529,51 @@ model CourseQuestionAnswer {
 
   @@index([questionId])
   @@index([answeredById])
+}
+
+model ChatRoom {
+  id            String         @id @default(cuid())
+  type          ChatRoomType    @default(DIRECT)
+  title         String?
+  createdAt     DateTime        @default(now())
+  updatedAt     DateTime        @updatedAt
+  lastMessageAt DateTime?
+
+  createdById   String
+  createdBy     User           @relation("ChatRoomCreatedBy", fields: [createdById], references: [id], onDelete: Cascade)
+  members       ChatMember[]
+  messages      ChatMessage[]
+
+  @@index([type, lastMessageAt])
+  @@index([createdById, createdAt])
+}
+
+model ChatMember {
+  id          String    @id @default(cuid())
+  roomId      String
+  userId      String
+  joinedAt    DateTime  @default(now())
+  lastReadAt  DateTime?
+
+  room        ChatRoom  @relation(fields: [roomId], references: [id], onDelete: Cascade)
+  user        User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([roomId, userId])
+  @@index([userId, roomId])
+}
+
+model ChatMessage {
+  id          String    @id @default(cuid())
+  roomId      String
+  senderId    String
+  body        String
+  createdAt   DateTime  @default(now())
+
+  room        ChatRoom  @relation(fields: [roomId], references: [id], onDelete: Cascade)
+  sender      User      @relation("ChatMessageSender", fields: [senderId], references: [id], onDelete: Cascade)
+
+  @@index([roomId, createdAt])
+  @@index([senderId, createdAt])
 }
 
 model Notification {
