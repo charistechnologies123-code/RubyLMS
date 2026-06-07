@@ -217,7 +217,9 @@ export default function GradebookSpreadsheet({
                       ? `${total.toFixed(2).replace(/\.00$/, "")} / ${possible.toFixed(2).replace(/\.00$/, "")}`
                       : total.toFixed(2).replace(/\.00$/, "")}
                   </td>
-                  <td className="px-4 py-3 align-top font-semibold text-[#6b00ff]">{average.toFixed(2)}%</td>
+                  <td className="px-4 py-3 align-top font-semibold text-[#6b00ff]">
+                    {average.toFixed(2)}%
+                  </td>
                 </tr>
               );
             })}
@@ -227,3 +229,4 @@ export default function GradebookSpreadsheet({
     </div>
   );
 }
+

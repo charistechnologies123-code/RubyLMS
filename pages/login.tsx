@@ -153,9 +153,9 @@ export default function LoginPage() {
           </form>
 
           <p className="mt-6 text-center text-sm text-slate-600">
-            Need the public overview first?{" "}
-            <Link href="/" className="font-semibold text-[#6b00ff] hover:underline">
-              Return to home
+            Need the course catalog first?{" "}
+            <Link href="/courses" className="font-semibold text-[#6b00ff] hover:underline">
+              Browse courses
             </Link>
           </p>
         </section>

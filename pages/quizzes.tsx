@@ -9,20 +9,6 @@ import { requirePageAuth } from "@/lib/pageAuth";
 import { prisma } from "@/lib/prisma";
 import { serialize } from "@/lib/serialize";
 
-type QuizOption = {
-  id: string;
-  optionText: string;
-  isCorrect: boolean;
-};
-
-type QuizQuestionView = {
-  id: string;
-  questionBank: {
-    questionText: string;
-    options: QuizOption[];
-  };
-};
-
 type QuizAttemptView = {
   id: string;
   attemptNumber: number;
@@ -35,16 +21,6 @@ export async function getServerSideProps(ctx: GetServerSidePropsContext) {
         where: getVisibleQuizWhere(session),
         include: {
           course: true,
-          quizQuestions: {
-            orderBy: { order: "asc" },
-            include: {
-              questionBank: {
-                include: {
-                  options: { orderBy: { order: "asc" } },
-                },
-              },
-            },
-          },
           attempts:
             session.role === "STUDENT"
               ? { where: { studentId: session.userId }, orderBy: { attemptNumber: "desc" } }
@@ -75,7 +51,6 @@ export default function QuizzesPage({
 }: InferGetServerSidePropsType<typeof getServerSideProps>) {
   const studentQuizzes = quizzes as Array<
     (typeof quizzes)[number] & {
-      quizQuestions: QuizQuestionView[];
       attempts: QuizAttemptView[];
     }
   >;
