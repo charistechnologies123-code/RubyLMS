@@ -295,6 +295,8 @@ export default function ChatPage({
   const [sendingMessage, setSendingMessage] = useState(false);
   const bottomRef = useRef<HTMLDivElement>(null);
   const markedRoomIdRef = useRef<string | null>(null);
+  const roomSyncRef = useRef<number | null>(null);
+  const roomListSyncRef = useRef<number | null>(null);
   const currentRoom = activeRoom ?? selectedRoom;
   const currentRoomId = currentRoom?.id ?? null;
 
@@ -306,6 +308,62 @@ export default function ChatPage({
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: "smooth", block: "end" });
   }, [currentRoomId, currentRoom?.messages.length]);
+
+  useEffect(() => {
+    let active = true;
+
+    async function refreshRooms() {
+      const response = await fetch("/api/chat/rooms");
+      const result = await response.json().catch(() => null);
+
+      if (!active || !response.ok || !result?.rooms) {
+        return;
+      }
+
+      setRoomList(result.rooms);
+    }
+
+    async function refreshCurrentRoom() {
+      if (!currentRoomId) {
+        return;
+      }
+
+      const response = await fetch(`/api/chat/rooms/${currentRoomId}`);
+      const result = await response.json().catch(() => null);
+
+      if (!active || !response.ok || !result?.room) {
+        return;
+      }
+
+      setActiveRoom(result.room);
+      setRoomList((currentRooms) =>
+        currentRooms.map((room) => (room.id === result.room.id ? result.room : room)),
+      );
+    }
+
+    void refreshRooms();
+    void refreshCurrentRoom();
+
+    roomListSyncRef.current = window.setInterval(() => {
+      void refreshRooms();
+    }, 6000);
+
+    roomSyncRef.current = currentRoomId
+      ? window.setInterval(() => {
+          void refreshCurrentRoom();
+        }, 2500)
+      : null;
+
+    return () => {
+      active = false;
+      if (roomListSyncRef.current) {
+        window.clearInterval(roomListSyncRef.current);
+      }
+      if (roomSyncRef.current) {
+        window.clearInterval(roomSyncRef.current);
+      }
+    };
+  }, [currentRoomId]);
 
   useEffect(() => {
     if (!currentRoomId || markedRoomIdRef.current === currentRoomId) {
