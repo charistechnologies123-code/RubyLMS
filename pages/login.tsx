@@ -139,7 +139,7 @@ export default function LoginPage() {
           </form>
 
           <p className="mt-5 text-center text-sm text-slate-600 sm:mt-6">
-            Forgot Password, contact Admins or Instructors
+            Forgot Password? Contact Admins or Instructors.
           </p>
         </section>
       </div>

@@ -48,18 +48,18 @@ export default function DashboardLayout({
   return (
     <ConfirmDialogProvider>
       <div className="min-h-screen bg-[radial-gradient(circle_at_top_left,_rgba(107,0,255,0.16),_transparent_36%),linear-gradient(180deg,_#faf7ff_0%,_#fff8f8_100%)] text-slate-900">
-        {routeLoading ? (
-          <div className="fixed inset-0 z-[100] flex items-center justify-center bg-slate-950/75 backdrop-blur-md">
-            <div className="flex flex-col items-center gap-5 rounded-[28px] border border-white/10 bg-white/5 px-8 py-7 shadow-[0_20px_80px_rgba(0,0,0,0.35)]">
+        {routeLoading && !router.pathname.startsWith("/chat") ? (
+          <div className="fixed inset-0 z-[100] flex items-center justify-center bg-white/90 backdrop-blur-md">
+            <div className="flex flex-col items-center gap-5 rounded-[28px] border border-[#e8ddff] bg-white px-8 py-7 shadow-[0_20px_80px_rgba(74,15,144,0.16)]">
               <img
                 src="/logo.svg"
                 alt="Ruby LMS"
-                className="h-16 w-auto drop-shadow-[0_8px_20px_rgba(255,255,255,0.12)]"
+                className="h-20 w-auto drop-shadow-[0_10px_24px_rgba(107,0,255,0.12)]"
               />
               <div className="flex items-center gap-2">
-                <span className="h-3 w-3 animate-bounce rounded-full bg-white/85 [animation-delay:-0.2s]" />
-                <span className="h-3 w-3 animate-bounce rounded-full bg-white/85 [animation-delay:-0.1s]" />
-                <span className="h-3 w-3 animate-bounce rounded-full bg-white/85" />
+                <span className="h-3 w-3 animate-bounce rounded-full bg-[#6b00ff]/80 [animation-delay:-0.2s]" />
+                <span className="h-3 w-3 animate-bounce rounded-full bg-[#8c3cff]/80 [animation-delay:-0.1s]" />
+                <span className="h-3 w-3 animate-bounce rounded-full bg-[#ff6b6b]/80" />
               </div>
             </div>
           </div>
