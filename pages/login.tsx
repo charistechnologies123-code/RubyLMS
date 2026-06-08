@@ -1,7 +1,6 @@
 "use client";
 
 import Image from "next/image";
-import Link from "next/link";
 import { useRouter } from "next/router";
 import { useState } from "react";
 import toast from "react-hot-toast";
@@ -56,47 +55,32 @@ export default function LoginPage() {
   }
 
   return (
-    <main className="min-h-screen bg-[radial-gradient(circle_at_top_left,_rgba(107,0,255,0.18),_transparent_30%),radial-gradient(circle_at_bottom_right,_rgba(255,30,30,0.15),_transparent_24%),linear-gradient(180deg,_#fff8fc_0%,_#faf7ff_100%)] px-4 py-8">
-      <div className="mx-auto grid min-h-[calc(100vh-4rem)] max-w-6xl items-center gap-8 lg:grid-cols-[1.1fr_0.9fr]">
-        <section className="rounded-[36px] border border-white/70 bg-[#16051f] px-6 py-10 text-white shadow-[0_30px_100px_rgba(47,7,89,0.26)] sm:px-8 md:px-10">
-          <div className="inline-flex rounded-full border border-white/10 bg-white/10 px-4 py-2 text-xs uppercase tracking-[0.26em] text-[#f4e8ff]">
-            Charis Technologies
-          </div>
-          <h1 className="mt-6 font-heading text-4xl leading-tight sm:text-5xl">
-            Ruby LMS that feels focused, modern, and ready for real classrooms.
-          </h1>
-          <p className="mt-4 max-w-2xl text-base text-slate-200 sm:text-lg">
-            Manage courses, track progress, publish assignments, run quizzes, and
-            keep students engaged with announcements, notifications, and Q&amp;A.
-          </p>
-          <div className="mt-8 grid gap-4 sm:grid-cols-3">
-            <div className="rounded-[24px] border border-white/10 bg-white/5 p-4">
-              <p className="font-heading text-2xl text-[#caa7ff]">3</p>
-              <p className="mt-2 text-sm text-slate-200">Role-based experiences</p>
-            </div>
-            <div className="rounded-[24px] border border-white/10 bg-white/5 p-4">
-              <p className="font-heading text-2xl text-[#ff9e9e]">MVP</p>
-              <p className="mt-2 text-sm text-slate-200">Courses, lessons, quizzes, grading</p>
-            </div>
-            <div className="rounded-[24px] border border-white/10 bg-white/5 p-4">
-              <p className="font-heading text-2xl text-white">100%</p>
-              <p className="mt-2 text-sm text-slate-200">Responsive dashboard shell</p>
+    <main className="min-h-screen bg-[radial-gradient(circle_at_top_left,_rgba(107,0,255,0.18),_transparent_30%),radial-gradient(circle_at_bottom_right,_rgba(255,30,30,0.15),_transparent_24%),linear-gradient(180deg,_#fff8fc_0%,_#faf7ff_100%)] px-3 py-5 sm:px-4 sm:py-8">
+      <div className="mx-auto grid min-h-[calc(100vh-2.5rem)] max-w-6xl items-center lg:grid-cols-1">
+        <section className="panel rounded-[32px] p-4 shadow-[0_20px_60px_rgba(74,15,144,0.08)] sm:rounded-[36px] sm:p-8">
+          <div className="text-center">
+            <div className="inline-flex rounded-full border border-[#e8ddff] bg-[#f7f1ff] px-4 py-2 text-xs font-semibold uppercase tracking-[0.26em] text-[#6b00ff]">
+              Charis Technologies
             </div>
           </div>
-        </section>
-
-        <section className="panel rounded-[36px] p-6 sm:p-8">
           <div className="flex justify-center">
-            <Image src="/logo.svg" alt="Ruby LMS logo" width={220} height={147} style={{ height: "auto" }} priority />
+            <Image
+              src="/logo.svg"
+              alt="Ruby LMS logo"
+              width={200}
+              height={134}
+              style={{ height: "auto" }}
+              priority
+            />
           </div>
-          <div className="mt-6 text-center">
-            <h2 className="font-heading text-3xl text-slate-950">Sign in to continue</h2>
+          <div className="mt-5 text-center sm:mt-6">
+            <h2 className="font-heading text-2xl text-slate-950 sm:text-3xl">Sign in to continue</h2>
             <p className="mt-2 text-sm text-slate-600">
               Students use email or student ID. Instructors and admins use email only.
             </p>
           </div>
 
-          <div className="mt-6 grid grid-cols-3 gap-2 rounded-[22px] bg-[#f6f0ff] p-2">
+          <div className="mt-5 grid grid-cols-3 gap-2 rounded-[22px] bg-[#f6f0ff] p-2 sm:mt-6">
             {(["STUDENT", "INSTRUCTOR", "ADMIN"] as Role[]).map((currentRole) => (
               <button
                 key={currentRole}
@@ -113,7 +97,7 @@ export default function LoginPage() {
             ))}
           </div>
 
-          <form className="mt-6 space-y-5" onSubmit={handleSubmit}>
+          <form className="mt-5 space-y-4 sm:mt-6 sm:space-y-5" onSubmit={handleSubmit}>
             <label className="block">
               <span className="text-sm font-semibold text-slate-700">{identifierLabel}</span>
               <input
@@ -154,11 +138,8 @@ export default function LoginPage() {
             </button>
           </form>
 
-          <p className="mt-6 text-center text-sm text-slate-600">
-            Need the course catalog first?{" "}
-            <Link href="/courses" className="font-semibold text-[#6b00ff] hover:underline">
-              Browse courses
-            </Link>
+          <p className="mt-5 text-center text-sm text-slate-600 sm:mt-6">
+            Forgot Password, contact Admins or Instructors
           </p>
         </section>
       </div>
