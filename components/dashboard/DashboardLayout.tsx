@@ -1,6 +1,7 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
+import { useRouter } from "next/router";
 import type { SessionUser } from "@/lib/auth";
 import type { Role } from "@/lib/navigation";
 import ConfirmDialogProvider from "@/components/ui/ConfirmDialogProvider";
@@ -24,12 +25,45 @@ export default function DashboardLayout({
   description,
   actions,
 }: DashboardLayoutProps) {
+  const router = useRouter();
   const [collapsed, setCollapsed] = useState(false);
   const [mobileOpen, setMobileOpen] = useState(false);
+  const [routeLoading, setRouteLoading] = useState(false);
+
+  useEffect(() => {
+    const handleStart = () => setRouteLoading(true);
+    const handleDone = () => setRouteLoading(false);
+
+    router.events.on("routeChangeStart", handleStart);
+    router.events.on("routeChangeComplete", handleDone);
+    router.events.on("routeChangeError", handleDone);
+
+    return () => {
+      router.events.off("routeChangeStart", handleStart);
+      router.events.off("routeChangeComplete", handleDone);
+      router.events.off("routeChangeError", handleDone);
+    };
+  }, [router.events]);
 
   return (
     <ConfirmDialogProvider>
       <div className="min-h-screen bg-[radial-gradient(circle_at_top_left,_rgba(107,0,255,0.16),_transparent_36%),linear-gradient(180deg,_#faf7ff_0%,_#fff8f8_100%)] text-slate-900">
+        {routeLoading ? (
+          <div className="fixed inset-0 z-[100] flex items-center justify-center bg-slate-950/75 backdrop-blur-md">
+            <div className="flex flex-col items-center gap-5 rounded-[28px] border border-white/10 bg-white/5 px-8 py-7 shadow-[0_20px_80px_rgba(0,0,0,0.35)]">
+              <img
+                src="/logo.svg"
+                alt="Ruby LMS"
+                className="h-16 w-auto drop-shadow-[0_8px_20px_rgba(255,255,255,0.12)]"
+              />
+              <div className="flex items-center gap-2">
+                <span className="h-3 w-3 animate-bounce rounded-full bg-white/85 [animation-delay:-0.2s]" />
+                <span className="h-3 w-3 animate-bounce rounded-full bg-white/85 [animation-delay:-0.1s]" />
+                <span className="h-3 w-3 animate-bounce rounded-full bg-white/85" />
+              </div>
+            </div>
+          </div>
+        ) : null}
         <Sidebar
           role={role}
           collapsed={collapsed}

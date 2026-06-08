@@ -22,7 +22,7 @@ type ChatUser = {
 type ChatMessage = {
   id: string;
   body: string;
-  createdAt: string;
+  createdAt: string | Date;
   sender: ChatUser;
 };
 
@@ -30,9 +30,10 @@ type ChatRoom = {
   id: string;
   type: "DIRECT" | "GROUP";
   title: string | null;
-  lastMessageAt: string | null;
+  lastMessageAt: string | Date | null;
   createdBy: ChatUser;
   members: Array<{
+    lastReadAt: string | Date | null;
     user: ChatUser;
   }>;
   messages: ChatMessage[];
@@ -53,6 +54,23 @@ function getRoomLabel(room: Pick<ChatRoom, "type" | "title" | "members">, curren
 
   const otherMember = room.members.find((member) => member.user.id !== currentUserId);
   return otherMember?.user.fullName || "Private chat";
+}
+
+function isRoomUnread(room: Pick<ChatRoom, "lastMessageAt" | "members">, currentUserId: string) {
+  if (!room.lastMessageAt) {
+    return false;
+  }
+
+  const member = room.members.find((currentMember) => currentMember.user.id === currentUserId);
+  if (!member) {
+    return false;
+  }
+
+  if (!member.lastReadAt) {
+    return true;
+  }
+
+  return new Date(member.lastReadAt).getTime() < new Date(room.lastMessageAt).getTime();
 }
 
 export async function getServerSideProps(ctx: GetServerSidePropsContext) {
@@ -98,7 +116,8 @@ export async function getServerSideProps(ctx: GetServerSidePropsContext) {
           },
         },
         members: {
-          include: {
+          select: {
+            lastReadAt: true,
             user: {
               select: {
                 id: true,
@@ -147,7 +166,8 @@ export async function getServerSideProps(ctx: GetServerSidePropsContext) {
             },
           },
           members: {
-            include: {
+            select: {
+              lastReadAt: true,
               user: {
                 select: {
                   id: true,
@@ -234,10 +254,23 @@ export default function ChatPage({
   const [creatingRoom, setCreatingRoom] = useState(false);
   const [sendingMessage, setSendingMessage] = useState(false);
   const bottomRef = useRef<HTMLDivElement>(null);
+  const markedRoomIdRef = useRef<string | null>(null);
 
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: "smooth", block: "end" });
   }, [selectedRoomId, selectedRoom?.messages.length]);
+
+  useEffect(() => {
+    if (!selectedRoomId || markedRoomIdRef.current === selectedRoomId) {
+      return;
+    }
+
+    markedRoomIdRef.current = selectedRoomId;
+
+    void fetch(`/api/chat/rooms/${selectedRoomId}`, {
+      method: "GET",
+    }).catch(() => null);
+  }, [selectedRoomId]);
 
   const selectedRoomLabel = useMemo(() => {
     if (!selectedRoom) {
@@ -343,6 +376,7 @@ export default function ChatPage({
             {rooms.length ? (
               rooms.map((room) => {
                 const isActive = room.id === selectedRoomId;
+                const hasUnread = !isActive && isRoomUnread(room, session.userId);
 
                 return (
                   <Link
@@ -350,8 +384,10 @@ export default function ChatPage({
                     href={`/chat?roomId=${room.id}`}
                     className={`block rounded-[22px] border p-4 transition ${
                       isActive
-                        ? "border-[#6b00ff] bg-[#faf7ff]"
-                        : "border-[#efe6ff] bg-white hover:border-[#d9c2ff]"
+                        ? "border-[#6b00ff] bg-[#faf7ff] shadow-[0_10px_30px_rgba(107,0,255,0.08)]"
+                        : hasUnread
+                          ? "border-[#b98cff] bg-[#f7f1ff] shadow-[0_8px_24px_rgba(107,0,255,0.08)] hover:border-[#8f52ff]"
+                          : "border-[#efe6ff] bg-white hover:border-[#d9c2ff]"
                     }`}
                   >
                     <div className="flex items-center justify-between gap-3">
@@ -363,6 +399,14 @@ export default function ChatPage({
                       </div>
                       <Badge tone={room.type === "DIRECT" ? "purple" : "green"}>{room.type}</Badge>
                     </div>
+                    {hasUnread ? (
+                      <div className="mt-3 flex items-center gap-2">
+                        <span className="h-2.5 w-2.5 rounded-full bg-[#6b00ff] shadow-[0_0_0_4px_rgba(107,0,255,0.12)]" />
+                        <span className="text-xs font-semibold uppercase tracking-[0.18em] text-[#6b00ff]">
+                          Unread
+                        </span>
+                      </div>
+                    ) : null}
                     <p className="mt-3 line-clamp-2 text-sm text-slate-600">
                       {room.messages[0]?.body || "No messages yet."}
                     </p>
