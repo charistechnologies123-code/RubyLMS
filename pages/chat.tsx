@@ -185,11 +185,10 @@ export async function getServerSideProps(ctx: GetServerSidePropsContext) {
       },
     });
 
-    const selectedRoomId = roomId ?? rooms[0]?.id ?? null;
-    const selectedRoom = selectedRoomId
+    const selectedRoom = roomId
       ? await prisma.chatRoom.findFirst({
         where: {
-          id: selectedRoomId,
+          id: roomId,
           members: {
             some: {
               userId: session.userId,
@@ -582,7 +581,9 @@ export default function ChatPage({
                         <article
                           key={message.id}
                           className={`max-w-[85%] rounded-[22px] px-4 py-3 ${
-                            isOwnMessage ? "ml-auto bg-[linear-gradient(135deg,#6b00ff,#8c3cff)] text-white" : "bg-white text-slate-800"
+                            isOwnMessage
+                              ? "ml-auto bg-[linear-gradient(135deg,#6b00ff,#8c3cff)] text-white"
+                              : "border border-[#e4d8ff] bg-[#f4efff] text-slate-800 shadow-[0_8px_24px_rgba(107,0,255,0.06)]"
                           }`}
                         >
                           <div className="flex items-center justify-between gap-3">
