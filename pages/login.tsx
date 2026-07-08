@@ -57,7 +57,7 @@ export default function LoginPage() {
 
   return (
     <main className="min-h-screen bg-[radial-gradient(circle_at_top_left,_rgba(107,0,255,0.18),_transparent_30%),radial-gradient(circle_at_bottom_right,_rgba(255,30,30,0.15),_transparent_24%),linear-gradient(180deg,_#fff8fc_0%,_#faf7ff_100%)] px-4 py-8">
-      <div className="mx-auto grid min-h-[calc(100vh-4rem)] max-w-6xl items-center gap-8 lg:grid-cols-[1.1fr_0.9fr]">
+      <div className="mx-auto grid min-h-[calc(100vh-4rem)] max-w-6xl items-center gap-8 lg:grid-cols-[1.2fr_minmax(0,0.8fr)]">
         <section className="rounded-[36px] border border-white/70 bg-[#16051f] px-6 py-10 text-white shadow-[0_30px_100px_rgba(47,7,89,0.26)] sm:px-8 md:px-10">
           <div className="inline-flex rounded-full border border-white/10 bg-white/10 px-4 py-2 text-xs uppercase tracking-[0.26em] text-[#f4e8ff]">
             Charis Technologies
@@ -85,7 +85,7 @@ export default function LoginPage() {
           </div>
         </section>
 
-        <section className="panel rounded-[36px] p-6 sm:p-8">
+        <section className="panel rounded-[36px] p-6 sm:p-8 lg:justify-self-end lg:max-w-[520px]">
           <div className="flex justify-center">
             <Image src="/logo.svg" alt="Ruby LMS logo" width={220} height={147} style={{ height: "auto" }} priority />
           </div>
@@ -165,3 +165,5 @@ export default function LoginPage() {
     </main>
   );
 }
+
+

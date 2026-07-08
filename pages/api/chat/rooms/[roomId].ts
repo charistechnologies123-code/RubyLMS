@@ -2,81 +2,85 @@ import type { NextApiResponse } from "next";
 import { prisma } from "@/lib/prisma";
 import { withApiAuth, type AuthedNextApiRequest } from "@/lib/api";
 
+const roomInclude = {
+  createdBy: {
+    select: {
+      id: true,
+      fullName: true,
+      avatarUrl: true,
+      role: true,
+    },
+  },
+  members: {
+    include: {
+      user: {
+        select: {
+          id: true,
+          fullName: true,
+          avatarUrl: true,
+          role: true,
+        },
+      },
+    },
+  },
+  messages: {
+    orderBy: { createdAt: "asc" },
+    include: {
+      sender: {
+        select: {
+          id: true,
+          fullName: true,
+          avatarUrl: true,
+          role: true,
+        },
+      },
+    },
+  },
+} as const;
+
 async function handler(req: AuthedNextApiRequest, res: NextApiResponse) {
   try {
     const roomId = String(req.query.roomId ?? "");
 
-    const roomMembership = await prisma.chatMember.findFirst({
-      where: {
-        roomId,
-        userId: req.session.userId,
-      },
+    const room = await prisma.chatRoom.findUnique({
+      where: { id: roomId },
+      include: roomInclude,
     });
 
-    if (!roomMembership) {
+    if (!room) {
+      return res.status(404).json({ error: "Chat room not found." });
+    }
+
+    const isMember = room.members.some((member) => member.userId === req.session.userId);
+    const canModerateGroupRoom = req.session.role === "ADMIN" && room.type === "GROUP";
+
+    if (!isMember && !canModerateGroupRoom) {
       return res.status(403).json({ error: "You do not have access to this chat room." });
     }
 
     if (req.method === "GET") {
-      const room = await prisma.chatRoom.findFirst({
-        where: { id: roomId },
-        include: {
-          createdBy: {
-            select: {
-              id: true,
-              fullName: true,
-              avatarUrl: true,
-              role: true,
+      if (isMember) {
+        await prisma.chatMember.update({
+          where: {
+            roomId_userId: {
+              roomId,
+              userId: req.session.userId,
             },
           },
-          members: {
-            include: {
-              user: {
-                select: {
-                  id: true,
-                  fullName: true,
-                  avatarUrl: true,
-                  role: true,
-                },
-              },
-            },
+          data: {
+            lastReadAt: new Date(),
           },
-          messages: {
-            orderBy: { createdAt: "asc" },
-            include: {
-              sender: {
-                select: {
-                  id: true,
-                  fullName: true,
-                  avatarUrl: true,
-                  role: true,
-                },
-              },
-            },
-          },
-        },
-      });
-
-      if (!room) {
-        return res.status(404).json({ error: "Chat room not found." });
+        });
       }
-
-      await prisma.chatMember.update({
-        where: {
-          roomId_userId: {
-            roomId,
-            userId: req.session.userId,
-          },
-        },
-        data: {
-          lastReadAt: new Date(),
-        },
-      });
 
       return res.status(200).json({ room });
     }
 
     if (req.method === "POST") {
+      if (!isMember) {
+        return res.status(403).json({ error: "Only room members can send messages." });
+      }
+
       const { body } = req.body as {
         body?: string;
       };
@@ -129,6 +133,15 @@ async function handler(req: AuthedNextApiRequest, res: NextApiResponse) {
       });
 
       return res.status(201).json({ message });
+    }
+
+    if (req.method === "DELETE") {
+      if (!canModerateGroupRoom) {
+        return res.status(403).json({ error: "Only admins can delete group chats." });
+      }
+
+      await prisma.chatRoom.delete({ where: { id: roomId } });
+      return res.status(200).json({ success: true });
     }
 
     return res.status(405).json({ error: "Method not allowed" });

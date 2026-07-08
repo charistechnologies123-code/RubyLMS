@@ -13,7 +13,7 @@ import { serialize } from "@/lib/serialize";
 type BuilderQuestion = {
   id: string;
   questionText: string;
-  questionType: "SINGLE_CHOICE" | "MULTIPLE_CHOICE" | "TRUE_FALSE";
+  questionType: "SINGLE_CHOICE" | "MULTIPLE_CHOICE" | "MATCHING" | "STRUCTURAL" | "TRUE_FALSE";
   marks: string;
   explanation: string;
   options: Array<{
@@ -172,3 +172,6 @@ export default function QuizQuestionEditorPage({
     </DashboardLayout>
   );
 }
+
+
+

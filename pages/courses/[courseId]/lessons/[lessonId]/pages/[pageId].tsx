@@ -12,6 +12,7 @@ import FormField from "@/components/ui/FormField";
 import ImageUploadField from "@/components/ui/ImageUploadField";
 import Panel from "@/components/ui/Panel";
 import RichTextEditorField from "@/components/ui/RichTextEditorField";
+import CourseWorkspaceSidebar from "@/components/dashboard/CourseWorkspaceSidebar";
 import { formatEstimatedDuration } from "@/lib/courseProgress";
 import { getManagedCourseWhere } from "@/lib/courseManagers";
 import { assertRoleAccess, getDefaultRouteForRole, getSessionFromPageContext } from "@/lib/auth";
@@ -227,7 +228,9 @@ export default function LessonContentPage({
       title={page.title}
       description={`Module page inside ${lesson.title}.`}
     >
-      <Panel className="mb-6">
+      <section className="grid gap-6 xl:grid-cols-[minmax(0,1fr)_20rem] xl:items-start">
+        <div className="space-y-6">
+          <Panel className="mb-6">
         <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
           <div className="space-y-4">
             <div className="flex flex-wrap items-center gap-2">
@@ -309,7 +312,7 @@ export default function LessonContentPage({
       </Panel>
 
       {canManage ? (
-        <Panel title="Edit Module Page" subtitle="Update the page body with headings, lists, tables, links, and embeds.">
+            <Panel title="Edit Module Page" subtitle="Update the page body with headings, lists, tables, links, and embeds.">
           <ApiForm
             key={page.id}
             action={`/api/lesson-pages/${page.id}`}
@@ -401,6 +404,17 @@ export default function LessonContentPage({
           <EmptyState title="No page resources yet" description="Add supporting resources from the module page editor." />
         )}
       </Panel>
+        </div>
+        <CourseWorkspaceSidebar course={{ id: lesson.course.id, title: lesson.course.title, lessons: [{ id: lesson.id, title: lesson.title, order: 1, status: "PUBLISHED", pages: lesson.pages }] }} activeLessonId={lesson.id} activePageId={page.id} />
+      </section>
     </DashboardLayout>
   );
 }
+
+
+
+
+
+
+
+

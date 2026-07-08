@@ -12,6 +12,7 @@ import FormField from "@/components/ui/FormField";
 import ImageUploadField from "@/components/ui/ImageUploadField";
 import Panel from "@/components/ui/Panel";
 import QuizBuilderField from "@/components/ui/QuizBuilderField";
+import CourseWorkspaceSidebar from "@/components/dashboard/CourseWorkspaceSidebar";
 import { formatEstimatedDuration } from "@/lib/courseProgress";
 import RichTextEditorField from "@/components/ui/RichTextEditorField";
 import { getManagedCourseWhere } from "@/lib/courseManagers";
@@ -25,7 +26,11 @@ type LessonNavigatorItem = {
   title: string;
   order: number;
   status: string;
-  pages: { id: string }[];
+  pages: {
+    id: string;
+    title: string;
+    order: number;
+  }[];
 };
 
 type LessonPageResource = {
@@ -354,7 +359,8 @@ export default function LessonPage({
         </div>
       </Panel>
 
-      <section className="space-y-6">
+      <section className="grid gap-6 xl:grid-cols-[minmax(0,1fr)_20rem] xl:items-start">
+        <div className="space-y-6">
         {canManage ? (
           <Panel
             title="Module Settings"
@@ -762,7 +768,12 @@ export default function LessonPage({
             </Panel>
           </div>
         </div>
+        </div>
+        <CourseWorkspaceSidebar course={course} activeLessonId={lesson.id} />
       </section>
     </DashboardLayout>
   );
 }
+
+
+

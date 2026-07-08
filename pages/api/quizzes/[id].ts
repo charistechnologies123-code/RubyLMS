@@ -6,7 +6,7 @@ import { canManageCourse } from "@/lib/permissions";
 
 type QuizQuestionPayload = {
   questionText: string;
-  questionType: "SINGLE_CHOICE" | "MULTIPLE_CHOICE" | "TRUE_FALSE";
+  questionType: "SINGLE_CHOICE" | "MULTIPLE_CHOICE" | "MATCHING" | "STRUCTURAL" | "TRUE_FALSE";
   marks?: number;
   explanation?: string;
   options: Array<{ optionText: string; isCorrect: boolean }>;
@@ -246,3 +246,4 @@ async function handler(req: AuthedNextApiRequest, res: NextApiResponse) {
 }
 
 export default withApiAuth(handler, ["ADMIN", "INSTRUCTOR", "STUDENT"]);
+

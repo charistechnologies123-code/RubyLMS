@@ -62,6 +62,8 @@ enum ChatRoomType {
 enum QuestionType {
   SINGLE_CHOICE
   MULTIPLE_CHOICE
+  MATCHING
+  STRUCTURAL
   TRUE_FALSE
 }
 
@@ -373,6 +375,7 @@ model QuestionBankItem {
   questionText     String
   questionType     QuestionType    @default(SINGLE_CHOICE)
   explanation      String?
+  questionData     Json?
   difficulty       DifficultyLevel @default(MEDIUM)
   marks            Float           @default(1)
   topic            String?
@@ -691,3 +694,5 @@ model GradebookCell {
   @@index([selectedQuizAttemptId])
   @@index([selectedAssignmentSubmissionId])
 }
+
+

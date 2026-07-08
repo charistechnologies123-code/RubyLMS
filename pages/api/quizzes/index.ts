@@ -6,6 +6,16 @@ import { withApiAuth, type AuthedNextApiRequest } from "@/lib/api";
 import { getVisibleQuizWhere } from "@/lib/lms";
 import { canManageCourse } from "@/lib/permissions";
 
+type QuestionPayload = {
+  questionText: string;
+  questionType: "SINGLE_CHOICE" | "MULTIPLE_CHOICE" | "MATCHING" | "STRUCTURAL" | "TRUE_FALSE";
+  marks?: number;
+  explanation?: string;
+  answerText?: string;
+  options?: Array<{ optionText: string; isCorrect: boolean }>;
+  matchingPairs?: Array<{ promptText: string; answerText: string }>;
+};
+
 async function handler(req: AuthedNextApiRequest, res: NextApiResponse) {
   if (req.method === "GET") {
     const quizzes = await prisma.quiz.findMany({
@@ -83,13 +93,7 @@ async function handler(req: AuthedNextApiRequest, res: NextApiResponse) {
       return res.status(403).json({ error: "Forbidden" });
     }
 
-    const parsedQuestions = JSON.parse(questions) as Array<{
-      questionText: string;
-      questionType: "SINGLE_CHOICE" | "MULTIPLE_CHOICE" | "TRUE_FALSE";
-      marks?: number;
-      explanation?: string;
-      options: Array<{ optionText: string; isCorrect: boolean }>;
-    }>;
+    const parsedQuestions = JSON.parse(questions) as QuestionPayload[];
 
     const quiz = await prisma.quiz.create({
       data: {
@@ -116,8 +120,16 @@ async function handler(req: AuthedNextApiRequest, res: NextApiResponse) {
                 questionType: question.questionType,
                 explanation: question.explanation || null,
                 marks: question.marks ?? 1,
+                questionData: {
+                  questionText: question.questionText,
+                  questionType: question.questionType,
+                  explanation: question.explanation || null,
+                  answerText: question.answerText || "",
+                  options: question.options ?? [],
+                  matchingPairs: question.matchingPairs ?? [],
+                },
                 options: {
-                  create: question.options.map((option, optionIndex) => ({
+                  create: (question.options ?? []).map((option, optionIndex) => ({
                     optionText: option.optionText,
                     isCorrect: option.isCorrect,
                     order: optionIndex + 1,

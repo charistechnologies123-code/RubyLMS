@@ -4,6 +4,7 @@ import { useEffect, useMemo, useRef, useState, type FormEvent } from "react";
 import { useRouter } from "next/router";
 import { MessageSquarePlus, Send } from "lucide-react";
 import DashboardLayout from "@/components/dashboard/DashboardLayout";
+import ApiActionButton from "@/components/ui/ApiActionButton";
 import Badge from "@/components/ui/Badge";
 import EmptyState from "@/components/ui/EmptyState";
 import Panel from "@/components/ui/Panel";
@@ -46,6 +47,43 @@ type ChatProps = {
   loadError?: string | null;
 };
 
+const roomInclude = {
+  createdBy: {
+    select: {
+      id: true,
+      fullName: true,
+      avatarUrl: true,
+      role: true,
+    },
+  },
+  members: {
+    include: {
+      user: {
+        select: {
+          id: true,
+          fullName: true,
+          avatarUrl: true,
+          role: true,
+        },
+      },
+    },
+  },
+  messages: {
+    take: 1,
+    orderBy: { createdAt: "desc" },
+    include: {
+      sender: {
+        select: {
+          id: true,
+          fullName: true,
+          avatarUrl: true,
+          role: true,
+        },
+      },
+    },
+  },
+} as const;
+
 function getRoomLabel(room: Pick<ChatRoom, "type" | "title" | "members">, currentUserId: string) {
   if (room.type === "GROUP") {
     return room.title || "Group chat";
@@ -79,7 +117,7 @@ export async function getServerSideProps(ctx: GetServerSidePropsContext) {
   const roomId = typeof ctx.query.roomId === "string" ? ctx.query.roomId : null;
 
   try {
-    const rooms = await prisma.chatRoom.findMany({
+    const memberRooms = await prisma.chatRoom.findMany({
       where: {
         members: {
           some: {
@@ -88,92 +126,23 @@ export async function getServerSideProps(ctx: GetServerSidePropsContext) {
         },
       },
       orderBy: [{ lastMessageAt: "desc" }, { updatedAt: "desc" }],
-      include: {
-        createdBy: {
-          select: {
-            id: true,
-            fullName: true,
-            avatarUrl: true,
-            role: true,
-          },
-        },
-        members: {
-          include: {
-            user: {
-              select: {
-                id: true,
-                fullName: true,
-                avatarUrl: true,
-                role: true,
-              },
-            },
-          },
-        },
-        messages: {
-          take: 1,
-          orderBy: { createdAt: "desc" },
-          include: {
-            sender: {
-              select: {
-                id: true,
-                fullName: true,
-                avatarUrl: true,
-                role: true,
-              },
-            },
-          },
-        },
-      },
+      include: roomInclude,
     });
 
-    const selectedRoomId = roomId ?? rooms[0]?.id ?? null;
-    const selectedRoom = selectedRoomId
-      ? await prisma.chatRoom.findFirst({
-        where: {
-          id: selectedRoomId,
-          members: {
-            some: {
-              userId: session.userId,
+    const extraGroupRooms =
+      session.role === "ADMIN"
+        ? await prisma.chatRoom.findMany({
+            where: {
+              type: "GROUP",
+              id: memberRooms.length ? { notIn: memberRooms.map((room) => room.id) } : undefined,
             },
-          },
-        },
-        include: {
-          createdBy: {
-            select: {
-              id: true,
-              fullName: true,
-              avatarUrl: true,
-              role: true,
-            },
-          },
-          members: {
-            include: {
-              user: {
-                select: {
-                  id: true,
-                  fullName: true,
-                  avatarUrl: true,
-                  role: true,
-                },
-              },
-            },
-          },
-          messages: {
-            orderBy: { createdAt: "asc" },
-            include: {
-              sender: {
-                select: {
-                  id: true,
-                  fullName: true,
-                  avatarUrl: true,
-                  role: true,
-                },
-              },
-            },
-          },
-        },
-      })
-      : null;
+            orderBy: [{ lastMessageAt: "desc" }, { updatedAt: "desc" }],
+            include: roomInclude,
+          })
+        : [];
+
+    const rooms = [...memberRooms, ...extraGroupRooms];
+    const selectedRoom = roomId ? rooms.find((room) => room.id === roomId) ?? null : rooms[0] ?? null;
 
     const users = await prisma.user.findMany({
       where: {
@@ -227,6 +196,10 @@ export default function ChatPage({
 }: InferGetServerSidePropsType<typeof getServerSideProps>) {
   const router = useRouter();
   const selectedRoomId = selectedRoom?.id ?? null;
+  const isAdmin = session.role === "ADMIN";
+  const isSelectedRoomMember = Boolean(selectedRoom?.members.some((member) => member.user.id === session.userId));
+  const canSendMessages = Boolean(selectedRoom && isSelectedRoomMember);
+  const canModerateSelectedRoom = Boolean(isAdmin && selectedRoom?.type === "GROUP");
   const [roomType, setRoomType] = useState<"DIRECT" | "GROUP">("DIRECT");
   const [roomTitle, setRoomTitle] = useState("");
   const [selectedMemberIds, setSelectedMemberIds] = useState<string[]>([]);
@@ -292,7 +265,7 @@ export default function ChatPage({
   async function handleSendMessage(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
 
-    if (!selectedRoom) {
+    if (!selectedRoom || !canSendMessages) {
       return;
     }
 
@@ -338,11 +311,13 @@ export default function ChatPage({
       ) : null}
 
       <div className="grid gap-6 lg:grid-cols-[320px_1fr]">
-        <Panel title="Rooms" subtitle="Select a private or group chat.">
+        <Panel title="Rooms" subtitle={isAdmin ? "Select a private chat or review any group chat." : "Select a private or group chat."}>
           <div className="space-y-3">
             {rooms.length ? (
               rooms.map((room) => {
                 const isActive = room.id === selectedRoomId;
+                const isRoomMember = room.members.some((member) => member.user.id === session.userId);
+                const isAdminGroupView = isAdmin && room.type === "GROUP" && !isRoomMember;
 
                 return (
                   <Link
@@ -361,7 +336,10 @@ export default function ChatPage({
                           {room.type === "DIRECT" ? "Private chat" : "Group chat"}
                         </p>
                       </div>
-                      <Badge tone={room.type === "DIRECT" ? "purple" : "green"}>{room.type}</Badge>
+                      <div className="flex flex-wrap justify-end gap-2">
+                        <Badge tone={room.type === "DIRECT" ? "purple" : "green"}>{room.type}</Badge>
+                        {isAdminGroupView ? <Badge tone="red">Admin view</Badge> : null}
+                      </div>
                     </div>
                     <p className="mt-3 line-clamp-2 text-sm text-slate-600">
                       {room.messages[0]?.body || "No messages yet."}
@@ -384,10 +362,32 @@ export default function ChatPage({
           <Panel title={selectedRoomLabel} subtitle={selectedRoom ? "Conversation workspace" : "No chat selected yet"}>
             {selectedRoom ? (
               <div className="space-y-4">
-                <div className="flex flex-wrap items-center gap-2">
-                  <Badge tone={selectedRoom.type === "DIRECT" ? "purple" : "green"}>{selectedRoom.type}</Badge>
-                  <Badge tone="slate">{selectedRoom.members.length} member(s)</Badge>
+                <div className="flex flex-wrap items-start justify-between gap-4">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <Badge tone={selectedRoom.type === "DIRECT" ? "purple" : "green"}>{selectedRoom.type}</Badge>
+                    <Badge tone="slate">{selectedRoom.members.length} member(s)</Badge>
+                    {canModerateSelectedRoom ? <Badge tone="red">Moderation view</Badge> : null}
+                  </div>
+                  {canModerateSelectedRoom ? (
+                    <ApiActionButton
+                      action={`/api/chat/rooms/${selectedRoom.id}`}
+                      method="DELETE"
+                      successMessage="Group chat deleted."
+                      label="Delete group chat"
+                      pendingLabel="Deleting..."
+                      confirmMessage="This will permanently delete the group chat and all of its messages. Continue?"
+                      tone="danger"
+                      redirectTo="/chat"
+                    />
+                  ) : null}
                 </div>
+
+                {canModerateSelectedRoom && !canSendMessages ? (
+                  <div className="rounded-[24px] border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">
+                    You are viewing this group chat as an admin. You can review it and delete it, but only members can send messages.
+                  </div>
+                ) : null}
+
                 <div className="max-h-[56vh] space-y-3 overflow-y-auto rounded-[24px] border border-[#efe6ff] bg-[#fcfaff] p-4">
                   {selectedRoom.messages.length ? (
                     selectedRoom.messages.map((message) => {
@@ -418,26 +418,28 @@ export default function ChatPage({
                   <div ref={bottomRef} />
                 </div>
 
-                <form className="space-y-3" onSubmit={handleSendMessage}>
-                  <label className="block">
-                    <span className="text-sm font-semibold text-slate-700">Message</span>
-                    <textarea
-                      value={messageBody}
-                      onChange={(event) => setMessageBody(event.target.value)}
-                      rows={4}
-                      className="mt-2 w-full rounded-[22px] border border-[#e8ddff] bg-white px-4 py-3 text-slate-950 outline-none focus:border-[#6b00ff] focus:ring-2 focus:ring-[#efe4ff]"
-                      placeholder="Write a message..."
-                    />
-                  </label>
-                  <button
-                    type="submit"
-                    disabled={sendingMessage}
-                    className="inline-flex items-center gap-2 rounded-2xl bg-[linear-gradient(135deg,#6b00ff,#8c3cff)] px-5 py-3 text-sm font-semibold text-white shadow-lg disabled:cursor-not-allowed disabled:opacity-60"
-                  >
-                    <Send size={16} />
-                    {sendingMessage ? "Sending..." : "Send message"}
-                  </button>
-                </form>
+                {canSendMessages ? (
+                  <form className="space-y-3" onSubmit={handleSendMessage}>
+                    <label className="block">
+                      <span className="text-sm font-semibold text-slate-700">Message</span>
+                      <textarea
+                        value={messageBody}
+                        onChange={(event) => setMessageBody(event.target.value)}
+                        rows={4}
+                        className="mt-2 w-full rounded-[22px] border border-[#e8ddff] bg-white px-4 py-3 text-slate-950 outline-none focus:border-[#6b00ff] focus:ring-2 focus:ring-[#efe4ff]"
+                        placeholder="Write a message..."
+                      />
+                    </label>
+                    <button
+                      type="submit"
+                      disabled={sendingMessage}
+                      className="inline-flex items-center gap-2 rounded-2xl bg-[linear-gradient(135deg,#6b00ff,#8c3cff)] px-5 py-3 text-sm font-semibold text-white shadow-lg disabled:cursor-not-allowed disabled:opacity-60"
+                    >
+                      <Send size={16} />
+                      {sendingMessage ? "Sending..." : "Send message"}
+                    </button>
+                  </form>
+                ) : null}
               </div>
             ) : (
               <EmptyState title="No room selected" description="Create or choose a chat room from the list on the left." />
@@ -550,7 +552,9 @@ export default function ChatPage({
                   {creatingRoom ? "Creating..." : "Start chat"}
                 </button>
                 <p className="text-sm text-slate-500">
-                  {roomType === "DIRECT" ? "Private chats keep one-to-one messages separate." : "Group chats are best for projects and class discussion."}
+                  {roomType === "DIRECT"
+                    ? "Private chats keep one-to-one messages separate."
+                    : "Group chats are best for projects and class discussion."}
                 </p>
               </div>
             </form>
