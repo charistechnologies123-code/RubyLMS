@@ -23,13 +23,15 @@ export default function Sidebar({
 }: Props) {
   const router = useRouter();
   const navItems = navigation[role];
-  const [counts, setCounts] = useState<{ announcements: number; questions: number }>({
+  const [counts, setCounts] = useState<{ announcements: number; questions: number; chat: number }>({
     announcements: 0,
     questions: 0,
+    chat: 0,
   });
 
   useEffect(() => {
     let active = true;
+    let intervalId: ReturnType<typeof setInterval> | null = null;
 
     async function loadCounts() {
       const response = await fetch("/api/sidebar-counts");
@@ -42,13 +44,20 @@ export default function Sidebar({
       setCounts({
         announcements: result.announcements ?? 0,
         questions: result.questions ?? 0,
+        chat: result.chat ?? 0,
       });
     }
 
     void loadCounts();
+    intervalId = setInterval(() => {
+      void loadCounts();
+    }, 30000);
 
     return () => {
       active = false;
+      if (intervalId) {
+        clearInterval(intervalId);
+      }
     };
   }, [router.asPath]);
 
@@ -96,6 +105,8 @@ export default function Sidebar({
                 ? counts.announcements
                 : item.href === "/questions"
                   ? counts.questions
+                  : item.href === "/chat"
+                    ? counts.chat
                   : 0;
 
             return (
@@ -103,13 +114,22 @@ export default function Sidebar({
                 key={item.name}
                 href={item.href}
                 onClick={() => setMobileOpen(false)}
-                className={`flex items-center gap-3 rounded-2xl px-3 py-3 text-sm transition ${
+                className={`relative flex items-center gap-3 rounded-2xl px-3 py-3 text-sm transition ${
                   isActive
                     ? "bg-[linear-gradient(135deg,#6b00ff,#8c3cff)] text-white shadow-lg"
                     : "text-slate-200 hover:bg-white/10 hover:text-white"
                 }`}
               >
                 <Icon size={18} />
+                {collapsed && badgeCount > 0 ? (
+                  <span
+                    className={`absolute right-2 top-2 inline-flex min-w-[1.4rem] items-center justify-center rounded-full px-1.5 py-0.5 text-[10px] font-semibold ${
+                      isActive ? "bg-white/20 text-white" : "bg-[#8c3cff] text-white"
+                    }`}
+                  >
+                    {badgeCount}
+                  </span>
+                ) : null}
                 {!collapsed && (
                   <div className="flex min-w-0 flex-1 items-center justify-between gap-3">
                     <span>{item.name}</span>

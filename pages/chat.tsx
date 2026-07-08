@@ -2,7 +2,7 @@ import type { GetServerSidePropsContext, InferGetServerSidePropsType } from "nex
 import Link from "next/link";
 import { useEffect, useMemo, useRef, useState, type FormEvent } from "react";
 import { useRouter } from "next/router";
-import { MessageSquarePlus, Send } from "lucide-react";
+import { Check, CheckCheck, Clock3, MessageSquarePlus, Send } from "lucide-react";
 import DashboardLayout from "@/components/dashboard/DashboardLayout";
 import ApiActionButton from "@/components/ui/ApiActionButton";
 import Badge from "@/components/ui/Badge";
@@ -10,6 +10,7 @@ import EmptyState from "@/components/ui/EmptyState";
 import Panel from "@/components/ui/Panel";
 import { assertRoleAccess, getDefaultRouteForRole, getSessionFromPageContext } from "@/lib/auth";
 import { formatDate } from "@/lib/format";
+import type { Role } from "@/lib/navigation";
 import { prisma } from "@/lib/prisma";
 import { serialize } from "@/lib/serialize";
 
@@ -17,13 +18,13 @@ type ChatUser = {
   id: string;
   fullName: string;
   avatarUrl: string | null;
-  role: string;
+  role: Role;
 };
 
 type ChatMessage = {
   id: string;
   body: string;
-  createdAt: string;
+  createdAt: string | Date;
   sender: ChatUser;
 };
 
@@ -31,12 +32,21 @@ type ChatRoom = {
   id: string;
   type: "DIRECT" | "GROUP";
   title: string | null;
-  lastMessageAt: string | null;
+  lastMessageAt: string | Date | null;
   createdBy: ChatUser;
   members: Array<{
+    lastReadAt: string | Date | null;
     user: ChatUser;
   }>;
   messages: ChatMessage[];
+};
+
+type RoomMessage = ChatMessage & {
+  status?: "pending" | "sent" | "delivered" | "read";
+};
+
+type ChatRoomState = Omit<ChatRoom, "messages"> & {
+  messages: RoomMessage[];
 };
 
 type ChatProps = {
@@ -57,7 +67,8 @@ const roomInclude = {
     },
   },
   members: {
-    include: {
+    select: {
+      lastReadAt: true,
       user: {
         select: {
           id: true,
@@ -84,13 +95,57 @@ const roomInclude = {
   },
 } as const;
 
-function getRoomLabel(room: Pick<ChatRoom, "type" | "title" | "members">, currentUserId: string) {
+function getRoomLabel(room: Pick<ChatRoomState, "type" | "title" | "members">, currentUserId: string) {
   if (room.type === "GROUP") {
     return room.title || "Group chat";
   }
 
   const otherMember = room.members.find((member) => member.user.id !== currentUserId);
   return otherMember?.user.fullName || "Private chat";
+}
+
+function isRoomUnread(room: Pick<ChatRoomState, "lastMessageAt" | "members">, currentUserId: string) {
+  if (!room.lastMessageAt) {
+    return false;
+  }
+
+  const member = room.members.find((currentMember) => currentMember.user.id === currentUserId);
+  if (!member) {
+    return false;
+  }
+
+  if (!member.lastReadAt) {
+    return true;
+  }
+
+  return new Date(member.lastReadAt).getTime() < new Date(room.lastMessageAt).getTime();
+}
+
+function getOwnMessageStatus(room: ChatRoomState, message: RoomMessage, currentUserId: string) {
+  if (message.status === "pending") {
+    return "pending" as const;
+  }
+
+  if (message.sender.id !== currentUserId) {
+    return null;
+  }
+
+  const otherMembers = room.members.filter((member) => member.user.id !== currentUserId);
+
+  if (!otherMembers.length) {
+    return "sent" as const;
+  }
+
+  const messageTime = new Date(message.createdAt).getTime();
+  const everyoneRead = otherMembers.every((member) => {
+    if (!member.lastReadAt) {
+      return false;
+    }
+
+    return new Date(member.lastReadAt).getTime() >= messageTime;
+  });
+
+  return everyoneRead ? "read" : "delivered";
 }
 
 export async function getServerSideProps(ctx: GetServerSidePropsContext) {
@@ -142,7 +197,10 @@ export async function getServerSideProps(ctx: GetServerSidePropsContext) {
         : [];
 
     const rooms = [...memberRooms, ...extraGroupRooms];
-    const selectedRoom = roomId ? rooms.find((room) => room.id === roomId) ?? null : rooms[0] ?? null;
+
+    const selectedRoom = roomId
+      ? rooms.find((room) => room.id === roomId) ?? null
+      : rooms[0] ?? null;
 
     const users = await prisma.user.findMany({
       where: {
@@ -195,11 +253,8 @@ export default function ChatPage({
   loadError,
 }: InferGetServerSidePropsType<typeof getServerSideProps>) {
   const router = useRouter();
-  const selectedRoomId = selectedRoom?.id ?? null;
-  const isAdmin = session.role === "ADMIN";
-  const isSelectedRoomMember = Boolean(selectedRoom?.members.some((member) => member.user.id === session.userId));
-  const canSendMessages = Boolean(selectedRoom && isSelectedRoomMember);
-  const canModerateSelectedRoom = Boolean(isAdmin && selectedRoom?.type === "GROUP");
+  const [roomList, setRoomList] = useState<ChatRoomState[]>(rooms as ChatRoomState[]);
+  const [activeRoom, setActiveRoom] = useState<ChatRoomState | null>(selectedRoom as ChatRoomState | null);
   const [roomType, setRoomType] = useState<"DIRECT" | "GROUP">("DIRECT");
   const [roomTitle, setRoomTitle] = useState("");
   const [selectedMemberIds, setSelectedMemberIds] = useState<string[]>([]);
@@ -207,18 +262,101 @@ export default function ChatPage({
   const [creatingRoom, setCreatingRoom] = useState(false);
   const [sendingMessage, setSendingMessage] = useState(false);
   const bottomRef = useRef<HTMLDivElement>(null);
+  const markedRoomIdRef = useRef<string | null>(null);
+  const roomSyncRef = useRef<number | null>(null);
+  const roomListSyncRef = useRef<number | null>(null);
+
+  const currentRoom = activeRoom ?? selectedRoom;
+  const currentRoomId = currentRoom?.id ?? null;
+  const isAdmin = session.role === "ADMIN";
+  const isSelectedRoomMember = Boolean(currentRoom?.members.some((member) => member.user.id === session.userId));
+  const canSendMessages = Boolean(currentRoom && isSelectedRoomMember);
+  const canModerateSelectedRoom = Boolean(isAdmin && currentRoom?.type === "GROUP");
+
+  useEffect(() => {
+    setRoomList(rooms as ChatRoomState[]);
+    setActiveRoom(selectedRoom as ChatRoomState | null);
+  }, [rooms, selectedRoom]);
 
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: "smooth", block: "end" });
-  }, [selectedRoomId, selectedRoom?.messages.length]);
+  }, [currentRoomId, currentRoom?.messages.length]);
+
+  useEffect(() => {
+    let active = true;
+
+    async function refreshRooms() {
+      const response = await fetch("/api/chat/rooms");
+      const result = await response.json().catch(() => null);
+
+      if (!active || !response.ok || !result?.rooms) {
+        return;
+      }
+
+      setRoomList(result.rooms);
+    }
+
+    async function refreshCurrentRoom() {
+      if (!currentRoomId) {
+        return;
+      }
+
+      const response = await fetch(`/api/chat/rooms/${currentRoomId}`);
+      const result = await response.json().catch(() => null);
+
+      if (!active || !response.ok || !result?.room) {
+        return;
+      }
+
+      setActiveRoom(result.room);
+      setRoomList((currentRooms) =>
+        currentRooms.map((room) => (room.id === result.room.id ? result.room : room)),
+      );
+    }
+
+    void refreshRooms();
+    void refreshCurrentRoom();
+
+    roomListSyncRef.current = window.setInterval(() => {
+      void refreshRooms();
+    }, 6000);
+
+    roomSyncRef.current = currentRoomId
+      ? window.setInterval(() => {
+          void refreshCurrentRoom();
+        }, 2500)
+      : null;
+
+    return () => {
+      active = false;
+      if (roomListSyncRef.current) {
+        window.clearInterval(roomListSyncRef.current);
+      }
+      if (roomSyncRef.current) {
+        window.clearInterval(roomSyncRef.current);
+      }
+    };
+  }, [currentRoomId]);
+
+  useEffect(() => {
+    if (!currentRoomId || markedRoomIdRef.current === currentRoomId) {
+      return;
+    }
+
+    markedRoomIdRef.current = currentRoomId;
+
+    void fetch(`/api/chat/rooms/${currentRoomId}`, {
+      method: "GET",
+    }).catch(() => null);
+  }, [currentRoomId]);
 
   const selectedRoomLabel = useMemo(() => {
-    if (!selectedRoom) {
+    if (!currentRoom) {
       return "No room selected";
     }
 
-    return getRoomLabel(selectedRoom, session.userId);
-  }, [selectedRoom, session.userId]);
+    return getRoomLabel(currentRoom, session.userId);
+  }, [currentRoom, session.userId]);
 
   async function handleCreateRoom(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -265,7 +403,7 @@ export default function ChatPage({
   async function handleSendMessage(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
 
-    if (!selectedRoom || !canSendMessages) {
+    if (!currentRoom || !canSendMessages) {
       return;
     }
 
@@ -274,9 +412,51 @@ export default function ChatPage({
       return;
     }
 
-    setSendingMessage(true);
+    const tempId = `temp-${Date.now()}`;
+    const optimisticMessage: RoomMessage = {
+      id: tempId,
+      body: trimmedBody,
+      createdAt: new Date().toISOString(),
+      sender: {
+        id: session.userId,
+        fullName: session.fullName,
+        avatarUrl: session.avatarUrl ?? null,
+        role: session.role,
+      },
+      status: "pending",
+    };
 
-    const response = await fetch(`/api/chat/rooms/${selectedRoom.id}`, {
+    setSendingMessage(true);
+    setMessageBody("");
+    setActiveRoom((current) =>
+      current
+        ? {
+            ...current,
+            messages: [...current.messages, optimisticMessage],
+            lastMessageAt: optimisticMessage.createdAt,
+          }
+        : current,
+    );
+    setRoomList((currentRooms) =>
+      currentRooms.map((room) =>
+        room.id === currentRoom.id
+          ? {
+              ...room,
+              lastMessageAt: optimisticMessage.createdAt,
+              messages: [
+                {
+                  id: tempId,
+                  body: trimmedBody,
+                  createdAt: optimisticMessage.createdAt,
+                  sender: optimisticMessage.sender,
+                },
+              ],
+            }
+          : room,
+      ),
+    );
+
+    const response = await fetch(`/api/chat/rooms/${currentRoom.id}`, {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
@@ -289,12 +469,57 @@ export default function ChatPage({
     if (!response.ok) {
       window.alert(result.error ?? "Unable to send message.");
       setSendingMessage(false);
+      setMessageBody(trimmedBody);
+      setActiveRoom((current) =>
+        current
+          ? {
+              ...current,
+              messages: current.messages.filter((message) => message.id !== tempId),
+            }
+          : current,
+      );
+      setRoomList((currentRooms) =>
+        currentRooms.map((room) =>
+          room.id === currentRoom.id
+            ? {
+                ...room,
+                messages: room.messages.filter((message) => message.id !== tempId),
+              }
+            : room,
+        ),
+      );
       return;
     }
 
-    setMessageBody("");
     setSendingMessage(false);
-    await router.replace(router.asPath);
+
+    const sentMessage: RoomMessage = {
+      ...result.message,
+      status: "sent",
+    };
+
+    setActiveRoom((current) =>
+      current
+        ? {
+            ...current,
+            messages: current.messages.map((message) =>
+              message.id === tempId ? sentMessage : message,
+            ),
+          }
+        : current,
+    );
+
+    setRoomList((currentRooms) =>
+      currentRooms.map((room) =>
+        room.id === currentRoom.id
+          ? {
+              ...room,
+              lastMessageAt: sentMessage.createdAt,
+              messages: [sentMessage, ...room.messages.filter((message) => message.id !== tempId)],
+            }
+          : room,
+      ),
+    );
   }
 
   return (
@@ -311,13 +536,16 @@ export default function ChatPage({
       ) : null}
 
       <div className="grid gap-6 lg:grid-cols-[320px_1fr]">
-        <Panel title="Rooms" subtitle={isAdmin ? "Select a private chat or review any group chat." : "Select a private or group chat."}>
+        <Panel
+          title="Rooms"
+          subtitle={isAdmin ? "Select a private chat or review any group chat." : "Select a private or group chat."}
+        >
           <div className="space-y-3">
-            {rooms.length ? (
-              rooms.map((room) => {
-                const isActive = room.id === selectedRoomId;
-                const isRoomMember = room.members.some((member) => member.user.id === session.userId);
-                const isAdminGroupView = isAdmin && room.type === "GROUP" && !isRoomMember;
+            {roomList.length ? (
+              roomList.map((room) => {
+                const isActive = room.id === currentRoomId;
+                const hasUnread = !isActive && isRoomUnread(room, session.userId);
+                const isAdminGroupView = isAdmin && room.type === "GROUP" && !room.members.some((member) => member.user.id === session.userId);
 
                 return (
                   <Link
@@ -325,8 +553,10 @@ export default function ChatPage({
                     href={`/chat?roomId=${room.id}`}
                     className={`block rounded-[22px] border p-4 transition ${
                       isActive
-                        ? "border-[#6b00ff] bg-[#faf7ff]"
-                        : "border-[#efe6ff] bg-white hover:border-[#d9c2ff]"
+                        ? "border-[#6b00ff] bg-[#faf7ff] shadow-[0_10px_30px_rgba(107,0,255,0.08)]"
+                        : hasUnread
+                          ? "border-[#b98cff] bg-[#f7f1ff] shadow-[0_8px_24px_rgba(107,0,255,0.08)] hover:border-[#8f52ff]"
+                          : "border-[#efe6ff] bg-white hover:border-[#d9c2ff]"
                     }`}
                   >
                     <div className="flex items-center justify-between gap-3">
@@ -341,6 +571,16 @@ export default function ChatPage({
                         {isAdminGroupView ? <Badge tone="red">Admin view</Badge> : null}
                       </div>
                     </div>
+                    {hasUnread ? (
+                      <div className="mt-3 flex items-center gap-2">
+                        <span className="inline-flex min-w-[1.6rem] items-center justify-center rounded-full bg-[#6b00ff] px-2 py-0.5 text-xs font-semibold text-white shadow-[0_0_0_4px_rgba(107,0,255,0.12)]">
+                          1
+                        </span>
+                        <span className="text-xs font-semibold uppercase tracking-[0.18em] text-[#6b00ff]">
+                          New
+                        </span>
+                      </div>
+                    ) : null}
                     <p className="mt-3 line-clamp-2 text-sm text-slate-600">
                       {room.messages[0]?.body || "No messages yet."}
                     </p>
@@ -359,18 +599,18 @@ export default function ChatPage({
         </Panel>
 
         <div className="space-y-6">
-          <Panel title={selectedRoomLabel} subtitle={selectedRoom ? "Conversation workspace" : "No chat selected yet"}>
-            {selectedRoom ? (
+          <Panel title={selectedRoomLabel} subtitle={currentRoom ? "Conversation workspace" : "No chat selected yet"}>
+            {currentRoom ? (
               <div className="space-y-4">
                 <div className="flex flex-wrap items-start justify-between gap-4">
                   <div className="flex flex-wrap items-center gap-2">
-                    <Badge tone={selectedRoom.type === "DIRECT" ? "purple" : "green"}>{selectedRoom.type}</Badge>
-                    <Badge tone="slate">{selectedRoom.members.length} member(s)</Badge>
+                    <Badge tone={currentRoom.type === "DIRECT" ? "purple" : "green"}>{currentRoom.type}</Badge>
+                    <Badge tone="slate">{currentRoom.members.length} member(s)</Badge>
                     {canModerateSelectedRoom ? <Badge tone="red">Moderation view</Badge> : null}
                   </div>
                   {canModerateSelectedRoom ? (
                     <ApiActionButton
-                      action={`/api/chat/rooms/${selectedRoom.id}`}
+                      action={`/api/chat/rooms/${currentRoom.id}`}
                       method="DELETE"
                       successMessage="Group chat deleted."
                       label="Delete group chat"
@@ -389,24 +629,44 @@ export default function ChatPage({
                 ) : null}
 
                 <div className="max-h-[56vh] space-y-3 overflow-y-auto rounded-[24px] border border-[#efe6ff] bg-[#fcfaff] p-4">
-                  {selectedRoom.messages.length ? (
-                    selectedRoom.messages.map((message) => {
+                  {currentRoom.messages.length ? (
+                    currentRoom.messages.map((message) => {
                       const isOwnMessage = message.sender.id === session.userId;
+                      const messageStatus = isOwnMessage
+                        ? getOwnMessageStatus(currentRoom, message as RoomMessage, session.userId)
+                        : null;
 
                       return (
                         <article
                           key={message.id}
                           className={`max-w-[85%] rounded-[22px] px-4 py-3 ${
-                            isOwnMessage ? "ml-auto bg-[linear-gradient(135deg,#6b00ff,#8c3cff)] text-white" : "bg-white text-slate-800"
+                            isOwnMessage
+                              ? "ml-auto bg-[linear-gradient(135deg,#6b00ff,#8c3cff)] text-white"
+                              : "border border-[#e4d8ff] bg-[#f4efff] text-slate-800 shadow-[0_8px_24px_rgba(107,0,255,0.06)]"
                           }`}
                         >
                           <div className="flex items-center justify-between gap-3">
                             <p className={`text-sm font-semibold ${isOwnMessage ? "text-white" : "text-slate-950"}`}>
                               {message.sender.fullName}
                             </p>
-                            <p className={`text-xs ${isOwnMessage ? "text-white/80" : "text-slate-500"}`}>
-                              {formatDate(message.createdAt)}
-                            </p>
+                            <div className="flex items-center gap-2">
+                              <p className={`text-xs ${isOwnMessage ? "text-white/80" : "text-slate-500"}`}>
+                                {formatDate(message.createdAt)}
+                              </p>
+                              {isOwnMessage && messageStatus ? (
+                                <span className={messageStatus === "read" ? "text-sky-300" : "text-white/75"}>
+                                  {messageStatus === "pending" ? (
+                                    <Clock3 size={14} />
+                                  ) : messageStatus === "read" ? (
+                                    <CheckCheck size={15} />
+                                  ) : messageStatus === "delivered" ? (
+                                    <CheckCheck size={15} />
+                                  ) : (
+                                    <Check size={14} />
+                                  )}
+                                </span>
+                              ) : null}
+                            </div>
                           </div>
                           <p className="mt-2 whitespace-pre-wrap text-sm leading-6">{message.body}</p>
                         </article>
