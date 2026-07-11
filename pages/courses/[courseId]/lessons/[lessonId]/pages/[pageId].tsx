@@ -1,4 +1,4 @@
-import type { GetServerSidePropsContext, GetServerSidePropsResult } from "next";
+﻿import type { GetServerSidePropsContext, GetServerSidePropsResult } from "next";
 import Link from "next/link";
 import { useRouter } from "next/router";
 import PageCompletionTracker from "@/components/progress/PageCompletionTracker";
@@ -12,7 +12,7 @@ import FormField from "@/components/ui/FormField";
 import ImageUploadField from "@/components/ui/ImageUploadField";
 import Panel from "@/components/ui/Panel";
 import RichTextEditorField from "@/components/ui/RichTextEditorField";
-import CourseWorkspaceSidebar from "@/components/dashboard/CourseWorkspaceSidebar";
+
 import { formatEstimatedDuration } from "@/lib/courseProgress";
 import { getManagedCourseWhere } from "@/lib/courseManagers";
 import { assertRoleAccess, getDefaultRouteForRole, getSessionFromPageContext } from "@/lib/auth";
@@ -228,7 +228,7 @@ export default function LessonContentPage({
       title={page.title}
       description={`Module page inside ${lesson.title}.`}
     >
-      <section className="grid gap-6 xl:grid-cols-[minmax(0,1fr)_20rem] xl:items-start">
+      <section className="grid gap-6">
         <div className="space-y-6">
           <Panel className="mb-6">
         <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
@@ -405,11 +405,12 @@ export default function LessonContentPage({
         )}
       </Panel>
         </div>
-        <CourseWorkspaceSidebar course={{ id: lesson.course.id, title: lesson.course.title, lessons: [{ id: lesson.id, title: lesson.title, order: 1, status: "PUBLISHED", pages: lesson.pages }] }} activeLessonId={lesson.id} activePageId={page.id} />
+
       </section>
     </DashboardLayout>
   );
 }
+
 
 
 

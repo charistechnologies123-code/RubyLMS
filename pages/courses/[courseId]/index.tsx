@@ -14,7 +14,7 @@ import FormField from "@/components/ui/FormField";
 import ImageUploadField from "@/components/ui/ImageUploadField";
 import MarkAnnouncementReadButton from "@/components/ui/MarkAnnouncementReadButton";
 import Panel from "@/components/ui/Panel";
-import CourseWorkspaceSidebar from "@/components/dashboard/CourseWorkspaceSidebar";
+
 import { calculateCourseProgress } from "@/lib/courseProgress";
 import { getManagedCourseWhere } from "@/lib/courseManagers";
 import { assertRoleAccess, getDefaultRouteForRole, getSessionFromPageContext } from "@/lib/auth";
@@ -361,7 +361,7 @@ export default function CourseWorkspacePage({
         </div>
       </Panel>
 
-      <section className="grid gap-6 xl:grid-cols-[minmax(0,1fr)_20rem] xl:items-start">
+      <section className="grid gap-6">
         <div className="space-y-6">
           <Panel id="overview" title="Course Overview" subtitle="Course setup, enrollment visibility, and core identity.">
           <div className="grid gap-6 lg:grid-cols-[1.1fr_0.9fr]">
@@ -879,11 +879,12 @@ export default function CourseWorkspacePage({
           </div>
         </Panel>
         </div>
-        <CourseWorkspaceSidebar course={course} />
+
       </section>
     </DashboardLayout>
   );
 }
+
 
 
 

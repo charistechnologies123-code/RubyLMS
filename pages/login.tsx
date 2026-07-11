@@ -1,4 +1,4 @@
-"use client";
+﻿"use client";
 
 import Image from "next/image";
 import { useRouter } from "next/router";
@@ -58,8 +58,8 @@ export default function LoginPage() {
 
   return (
     <main className="min-h-screen bg-[radial-gradient(circle_at_top_left,_rgba(107,0,255,0.18),_transparent_30%),radial-gradient(circle_at_bottom_right,_rgba(255,30,30,0.15),_transparent_24%),linear-gradient(180deg,_#fff8fc_0%,_#faf7ff_100%)] px-4 py-8">
-      <div className="mx-auto flex min-h-[calc(100vh-4rem)] max-w-2xl items-center justify-center">
-        <section className="panel w-full rounded-[36px] p-6 sm:p-8">
+      <div className="mx-auto flex min-h-[calc(100vh-4rem)] w-full max-w-[calc(100vw-1rem)] items-center justify-center sm:max-w-2xl">
+        <section className="panel w-full rounded-[36px] p-5 sm:p-8">
           <div className="flex justify-center">
             <Image src="/logo.svg" alt="Ruby LMS logo" width={220} height={147} style={{ height: "auto" }} priority />
           </div>
@@ -79,7 +79,7 @@ export default function LoginPage() {
                 key={currentRole}
                 type="button"
                 onClick={() => setRole(currentRole)}
-                className={`rounded-2xl px-3 py-3 text-sm font-semibold transition ${
+                className={`rounded-2xl px-2 py-3 text-xs font-semibold whitespace-nowrap transition sm:px-3 sm:text-sm ${
                   role === currentRole
                     ? "bg-[linear-gradient(135deg,#6b00ff,#8c3cff)] text-white shadow-lg"
                     : "text-slate-600 hover:bg-white"
@@ -141,3 +141,4 @@ export default function LoginPage() {
     </main>
   );
 }
+

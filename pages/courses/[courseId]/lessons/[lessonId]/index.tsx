@@ -1,4 +1,4 @@
-import type { GetServerSidePropsContext, GetServerSidePropsResult } from "next";
+﻿import type { GetServerSidePropsContext, GetServerSidePropsResult } from "next";
 import Link from "next/link";
 import { useState } from "react";
 import DashboardLayout from "@/components/dashboard/DashboardLayout";
@@ -12,7 +12,7 @@ import FormField from "@/components/ui/FormField";
 import ImageUploadField from "@/components/ui/ImageUploadField";
 import Panel from "@/components/ui/Panel";
 import QuizBuilderField from "@/components/ui/QuizBuilderField";
-import CourseWorkspaceSidebar from "@/components/dashboard/CourseWorkspaceSidebar";
+
 import { formatEstimatedDuration } from "@/lib/courseProgress";
 import RichTextEditorField from "@/components/ui/RichTextEditorField";
 import { getManagedCourseWhere } from "@/lib/courseManagers";
@@ -359,7 +359,7 @@ export default function LessonPage({
         </div>
       </Panel>
 
-      <section className="grid gap-6 xl:grid-cols-[minmax(0,1fr)_20rem] xl:items-start">
+      <section className="grid gap-6">
         <div className="space-y-6">
         {canManage ? (
           <Panel
@@ -769,11 +769,12 @@ export default function LessonPage({
           </div>
         </div>
         </div>
-        <CourseWorkspaceSidebar course={course} activeLessonId={lesson.id} />
+
       </section>
     </DashboardLayout>
   );
 }
+
 
 
 
