@@ -1,0 +1,2 @@
+ALTER TABLE IF EXISTS "LiveClass"
+  DROP COLUMN IF EXISTS "roomName";

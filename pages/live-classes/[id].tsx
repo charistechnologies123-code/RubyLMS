@@ -1,4 +1,4 @@
-﻿import type { GetServerSidePropsContext, InferGetServerSidePropsType } from "next";
+import type { GetServerSidePropsContext, InferGetServerSidePropsType } from "next";
 import Link from "next/link";
 import DashboardLayout from "@/components/dashboard/DashboardLayout";
 import ApiActionButton from "@/components/ui/ApiActionButton";

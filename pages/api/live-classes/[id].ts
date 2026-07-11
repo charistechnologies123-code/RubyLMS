@@ -1,4 +1,4 @@
-﻿import type { NextApiResponse } from "next";
+import type { NextApiResponse } from "next";
 import { Prisma } from "@prisma/client";
 import { withApiAuth, type AuthedNextApiRequest } from "@/lib/api";
 import { canDeleteLiveClass, canManageLiveClass, isLiveClassJoinable } from "@/lib/liveClasses";
@@ -162,9 +162,8 @@ async function handler(req: AuthedNextApiRequest, res: NextApiResponse) {
         return res.status(403).json({ error: "Only the course instructor, live class creator, or an admin can delete this live class." });
       }
 
-      await prisma.liveClass.update({
+      await prisma.liveClass.delete({
         where: { id: liveClassId },
-        data: { status: "CANCELLED" },
       });
 
       return res.status(200).json({ success: true });
