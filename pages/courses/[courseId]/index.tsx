@@ -1,4 +1,4 @@
-/* eslint-disable @typescript-eslint/no-explicit-any */
+﻿/* eslint-disable @typescript-eslint/no-explicit-any */
 import type { GetServerSidePropsContext, GetServerSidePropsResult } from "next";
 import Link from "next/link";
 import { useState } from "react";
@@ -344,6 +344,7 @@ export default function CourseWorkspacePage({
             {[
               ["Overview", "#overview"],
               ["Modules", "#lessons"],
+              ["Live Classes", `/courses/${course.id}/live-classes`],
               ["Resources", "#resources"],
               ["Announcements", "#announcements"],
               ["Q&A", "#qa"],
@@ -883,6 +884,11 @@ export default function CourseWorkspacePage({
     </DashboardLayout>
   );
 }
+
+
+
+
+
 
 
 

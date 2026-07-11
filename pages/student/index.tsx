@@ -1,6 +1,8 @@
-import type { GetServerSidePropsContext, InferGetServerSidePropsType } from "next";
+﻿import type { GetServerSidePropsContext, InferGetServerSidePropsType } from "next";
+import Link from "next/link";
 import DashboardLayout from "@/components/dashboard/DashboardLayout";
 import Badge from "@/components/ui/Badge";
+import EmptyState from "@/components/ui/EmptyState";
 import Panel from "@/components/ui/Panel";
 import StatCard from "@/components/ui/StatCard";
 import { formatShortDate } from "@/lib/format";
@@ -20,6 +22,11 @@ export async function getServerSideProps(ctx: GetServerSidePropsContext) {
               announcements: {
                 orderBy: { createdAt: "desc" },
                 take: 2,
+              },
+              liveClasses: {
+                where: { status: { in: ["SCHEDULED", "LIVE"] } },
+                orderBy: { startsAt: "asc" },
+                take: 3,
               },
             },
           },
@@ -83,12 +90,14 @@ export default function StudentDashboard({
   notifications,
   stats,
 }: InferGetServerSidePropsType<typeof getServerSideProps>) {
+  const liveClasses = enrollments.flatMap((enrollment: any) => enrollment.course.liveClasses.map((liveClass: any) => ({ ...liveClass, courseTitle: enrollment.course.title })));
+
   return (
     <DashboardLayout
       role="STUDENT"
       session={session}
       title="Student Learning Hub"
-      description="Stay on top of lessons, due work, announcements, and quiz progress from one motivating workspace."
+      description="Stay on top of lessons, due work, announcements, live classes, and quiz progress from one motivating workspace."
     >
       <section className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
         <StatCard label="Enrolled courses" value={stats.courses} helper="Your active learning spaces" />
@@ -100,7 +109,7 @@ export default function StudentDashboard({
       <section className="mt-6 grid gap-6 xl:grid-cols-[1.15fr_0.85fr]">
         <Panel title="My Courses">
           <div className="space-y-3">
-            {enrollments.map((enrollment) => (
+            {enrollments.map((enrollment: any) => (
               <div key={enrollment.id} className="rounded-[22px] border border-[#efe6ff] bg-white p-4">
                 <div className="flex items-center justify-between gap-3">
                   <p className="font-semibold text-slate-950">{enrollment.course.title}</p>
@@ -112,6 +121,20 @@ export default function StudentDashboard({
                 <p className="mt-3 text-xs uppercase tracking-[0.18em] text-slate-500">
                   {enrollment.course.lessons.length} lessons
                 </p>
+                <div className="mt-4 flex flex-wrap gap-2">
+                  <Link
+                    href={`/courses/${enrollment.course.id}`}
+                    className="rounded-2xl border border-[#e8ddff] bg-[#faf7ff] px-4 py-3 text-sm font-semibold text-[#6b00ff]"
+                  >
+                    Open course
+                  </Link>
+                  <Link
+                    href={`/courses/${enrollment.course.id}/live-classes`}
+                    className="rounded-2xl border border-[#e8ddff] bg-white px-4 py-3 text-sm font-semibold text-slate-700"
+                  >
+                    Live classes
+                  </Link>
+                </div>
               </div>
             ))}
           </div>
@@ -119,7 +142,7 @@ export default function StudentDashboard({
 
         <Panel title="Notifications">
           <div className="space-y-3">
-            {notifications.map((notification) => (
+            {notifications.map((notification: any) => (
               <div key={notification.id} className="rounded-[22px] bg-[#faf7ff] p-4">
                 <div className="flex items-center justify-between gap-3">
                   <p className="font-semibold text-slate-950">{notification.title}</p>
@@ -137,10 +160,39 @@ export default function StudentDashboard({
         </Panel>
       </section>
 
+      <Panel className="mt-6" title="Live Classes" subtitle="Join any session that is open for your enrolled courses.">
+        <div className="space-y-3">
+          {liveClasses.length ? (
+            liveClasses.map((liveClass: any) => (
+              <div key={liveClass.id} className="rounded-[22px] border border-[#efe6ff] bg-white p-4">
+                <div className="flex flex-wrap items-center justify-between gap-3">
+                  <div>
+                    <p className="font-semibold text-slate-950">{liveClass.title}</p>
+                    <p className="mt-1 text-sm text-slate-600">{liveClass.courseTitle}</p>
+                  </div>
+                  <Badge tone={liveClass.status === "LIVE" ? "green" : "purple"}>{liveClass.status}</Badge>
+                </div>
+                <p className="mt-2 text-sm text-slate-600">{formatShortDate(liveClass.startsAt)}</p>
+                <div className="mt-4 flex flex-wrap gap-3">
+                  <Link
+                    href={`/live-classes/${liveClass.id}`}
+                    className="rounded-2xl bg-[linear-gradient(135deg,#6b00ff,#8c3cff)] px-4 py-3 text-sm font-semibold text-white"
+                  >
+                    {liveClass.status === "LIVE" ? "Join now" : "View live class"}
+                  </Link>
+                </div>
+              </div>
+            ))
+          ) : (
+            <EmptyState title="No live classes yet" description="Your instructors will schedule live sessions here when they are ready." />
+          )}
+        </div>
+      </Panel>
+
       <section className="mt-6 grid gap-6 lg:grid-cols-2">
         <Panel title="Upcoming Assignments">
           <div className="space-y-3">
-            {assignments.slice(0, 6).map((assignment) => (
+            {assignments.slice(0, 6).map((assignment: any) => (
               <div key={assignment.id} className="rounded-[22px] bg-[#fff8f8] p-4">
                 <div className="flex items-center justify-between gap-3">
                   <p className="font-semibold text-slate-950">{assignment.title}</p>
@@ -159,7 +211,7 @@ export default function StudentDashboard({
 
         <Panel title="Recent Quiz Attempts">
           <div className="space-y-3">
-            {quizAttempts.slice(0, 6).map((attempt) => (
+            {quizAttempts.slice(0, 6).map((attempt: any) => (
               <div key={attempt.id} className="rounded-[22px] border border-[#efe6ff] bg-white p-4">
                 <p className="font-semibold text-slate-950">{attempt.quiz.title}</p>
                 <p className="mt-1 text-sm text-slate-600">{attempt.quiz.course.title}</p>
@@ -174,3 +226,6 @@ export default function StudentDashboard({
     </DashboardLayout>
   );
 }
+
+
+

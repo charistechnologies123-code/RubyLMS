@@ -59,6 +59,13 @@ enum ChatRoomType {
   GROUP
 }
 
+enum LiveClassStatus {
+  SCHEDULED
+  LIVE
+  ENDED
+  CANCELLED
+}
+
 enum QuestionType {
   SINGLE_CHOICE
   MULTIPLE_CHOICE
@@ -119,6 +126,7 @@ model User {
   gradebookCells      GradebookCell[]
   gradebookPublishes  GradebookPublication[] @relation("GradebookPublishedBy")
   chatRoomsCreated    ChatRoom[]             @relation("ChatRoomCreatedBy")
+  liveClassesCreated  LiveClass[]            @relation("LiveClassCreatedBy")
   chatMemberships     ChatMember[]
   chatMessagesSent    ChatMessage[]          @relation("ChatMessageSender")
   notifications       Notification[]
@@ -154,6 +162,29 @@ model Course {
   gradebookColumns GradebookColumn[]
   gradebookCells   GradebookCell[]
   gradebookPublication GradebookPublication?
+  liveClasses       LiveClass[]
+}
+
+model LiveClass {
+  id          String          @id @default(cuid())
+  title       String
+  description String?
+  roomName    String          @unique
+  startsAt    DateTime
+  endsAt      DateTime?
+  status      LiveClassStatus @default(SCHEDULED)
+  allowChat   Boolean         @default(true)
+  createdAt   DateTime        @default(now())
+  updatedAt   DateTime        @updatedAt
+
+  courseId    String
+  createdById String
+
+  course      Course          @relation(fields: [courseId], references: [id], onDelete: Cascade)
+  createdBy   User            @relation("LiveClassCreatedBy", fields: [createdById], references: [id], onDelete: Restrict)
+
+  @@index([courseId, startsAt])
+  @@index([createdById, startsAt])
 }
 
 model Enrollment {
@@ -694,5 +725,7 @@ model GradebookCell {
   @@index([selectedQuizAttemptId])
   @@index([selectedAssignmentSubmissionId])
 }
+
+
 
 

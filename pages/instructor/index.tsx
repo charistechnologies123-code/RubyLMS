@@ -1,4 +1,5 @@
-import type { GetServerSidePropsContext, InferGetServerSidePropsType } from "next";
+﻿import type { GetServerSidePropsContext, InferGetServerSidePropsType } from "next";
+import Link from "next/link";
 import DashboardLayout from "@/components/dashboard/DashboardLayout";
 import Badge from "@/components/ui/Badge";
 import Panel from "@/components/ui/Panel";
@@ -17,6 +18,11 @@ export async function getServerSideProps(ctx: GetServerSidePropsContext) {
         include: {
           enrollments: true,
           lessons: true,
+          liveClasses: {
+            where: { status: { in: ["SCHEDULED", "LIVE"] } },
+            orderBy: { startsAt: "asc" },
+            take: 3,
+          },
         },
       }),
       prisma.assignment.findMany({
@@ -91,9 +97,9 @@ export default function InstructorDashboard({
       </section>
 
       <section className="mt-6 grid gap-6 xl:grid-cols-[1.15fr_0.85fr]">
-        <Panel title="Course Delivery" subtitle="Quick look at lessons and enrollment momentum.">
+        <Panel title="Course Delivery" subtitle="Quick look at lessons, live sessions, and enrollment momentum.">
           <div className="space-y-3">
-            {courses.map((course) => (
+            {courses.map((course: any) => (
               <div key={course.id} className="rounded-[22px] border border-[#eee4ff] bg-white p-4">
                 <div className="flex items-center justify-between gap-3">
                   <p className="font-semibold text-slate-950">{course.title}</p>
@@ -104,6 +110,35 @@ export default function InstructorDashboard({
                   <span>{course.lessons.length} lessons</span>
                   <span>{course.enrollments.length} learners</span>
                 </div>
+                <div className="mt-4 space-y-2">
+                  {course.liveClasses.length ? (
+                    course.liveClasses.map((liveClass: any) => (
+                      <div key={liveClass.id} className="rounded-[18px] bg-[#faf7ff] p-3 text-sm">
+                        <div className="flex items-center justify-between gap-3">
+                          <p className="font-semibold text-slate-950">{liveClass.title}</p>
+                          <Badge tone={liveClass.status === "LIVE" ? "green" : "purple"}>{liveClass.status}</Badge>
+                        </div>
+                        <p className="mt-1 text-slate-600">{formatShortDate(liveClass.startsAt)}</p>
+                        <div className="mt-3 flex flex-wrap gap-2">
+                          <Link
+                            href={`/courses/${course.id}/live-classes`}
+                            className="rounded-full border border-[#e8ddff] bg-white px-3 py-2 text-xs font-semibold text-[#6b00ff]"
+                          >
+                            Manage schedule
+                          </Link>
+                          <Link
+                            href={`/live-classes/${liveClass.id}`}
+                            className="rounded-full bg-[linear-gradient(135deg,#6b00ff,#8c3cff)] px-3 py-2 text-xs font-semibold text-white"
+                          >
+                            Open room
+                          </Link>
+                        </div>
+                      </div>
+                    ))
+                  ) : (
+                    <p className="text-xs uppercase tracking-[0.16em] text-slate-500">No live classes scheduled yet</p>
+                  )}
+                </div>
               </div>
             ))}
           </div>
@@ -111,7 +146,7 @@ export default function InstructorDashboard({
 
         <Panel title="Student Questions" subtitle="Newest questions from your course spaces.">
           <div className="space-y-3">
-            {questions.slice(0, 6).map((question) => (
+            {questions.slice(0, 6).map((question: any) => (
               <div key={question.id} className="rounded-[22px] bg-[#faf7ff] p-4">
                 <div className="flex items-center justify-between gap-3">
                   <p className="font-semibold text-slate-950">{question.title}</p>
@@ -132,7 +167,7 @@ export default function InstructorDashboard({
       <section className="mt-6 grid gap-6 lg:grid-cols-2">
         <Panel title="Assignment Pipeline">
           <div className="space-y-3">
-            {assignments.slice(0, 6).map((assignment) => (
+            {assignments.slice(0, 6).map((assignment: any) => (
               <div key={assignment.id} className="rounded-[22px] bg-[#fff9fb] p-4">
                 <p className="font-semibold text-slate-950">{assignment.title}</p>
                 <p className="mt-1 text-sm text-slate-600">{assignment.course.title}</p>
@@ -146,7 +181,7 @@ export default function InstructorDashboard({
 
         <Panel title="Recent Announcements">
           <div className="space-y-3">
-            {announcements.slice(0, 6).map((announcement) => (
+            {announcements.slice(0, 6).map((announcement: any) => (
               <div key={announcement.id} className="rounded-[22px] border border-[#efe6ff] bg-white p-4">
                 <p className="font-semibold text-slate-950">{announcement.title}</p>
                 <p className="mt-1 text-sm text-slate-600">{announcement.course.title}</p>
@@ -161,3 +196,4 @@ export default function InstructorDashboard({
     </DashboardLayout>
   );
 }
+
