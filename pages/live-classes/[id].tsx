@@ -5,13 +5,12 @@ import ApiActionButton from "@/components/ui/ApiActionButton";
 import Badge from "@/components/ui/Badge";
 import EmptyState from "@/components/ui/EmptyState";
 import Panel from "@/components/ui/Panel";
-import JitsiMeeting from "@/components/live/JitsiMeeting";
 import { assertRoleAccess, getDefaultRouteForRole, getSessionFromPageContext } from "@/lib/auth";
-import { canManageCourse } from "@/lib/permissions";
 import { formatDate } from "@/lib/format";
+import { canManageCourse } from "@/lib/permissions";
 import { prisma } from "@/lib/prisma";
 import { serialize } from "@/lib/serialize";
-import { getLiveClassStateLabel, isLiveClassJoinable } from "@/lib/liveClasses";
+import { canDeleteLiveClass, getLiveClassStateLabel, isLiveClassJoinable } from "@/lib/liveClasses";
 
 export async function getServerSideProps(ctx: GetServerSidePropsContext) {
   const session = getSessionFromPageContext(ctx);
@@ -108,8 +107,11 @@ export async function getServerSideProps(ctx: GetServerSidePropsContext) {
 
   const managerIds = [liveClass.course.instructorId, liveClass.course.createdById, ...liveClass.course.courseManagers.map((manager) => manager.userId)].filter(Boolean) as string[];
   const canManage = canManageCourse(session, managerIds);
+  const canDelete = canDeleteLiveClass(session, liveClass);
   const isEnrolled = liveClass.course.enrollments.some((enrollment) => enrollment.studentId === session.userId);
-  const canJoin = isEnrolled && isLiveClassJoinable(liveClass);
+  const meetingUrl = liveClass.meetingUrl ?? "";
+  const hasMeetingLink = Boolean(meetingUrl.trim());
+  const canJoin = isEnrolled && isLiveClassJoinable(liveClass) && hasMeetingLink;
   const canView = session.role === "ADMIN" || canManage || isEnrolled;
 
   if (!canView) {
@@ -127,17 +129,19 @@ export async function getServerSideProps(ctx: GetServerSidePropsContext) {
       liveClass: serialize(liveClass),
       canManage,
       canJoin,
+      canDelete,
     },
   };
 }
 
-export default function LiveClassPage({ session, liveClass, canManage, canJoin }: InferGetServerSidePropsType<typeof getServerSideProps>) {
+export default function LiveClassPage({ session, liveClass, canManage, canJoin, canDelete }: InferGetServerSidePropsType<typeof getServerSideProps>) {
   const participantNames = [
     liveClass.createdBy.fullName,
     ...liveClass.course.courseManagers.map((manager: any) => manager.user.fullName),
     ...liveClass.course.enrollments.map((enrollment: any) => enrollment.student.fullName),
   ];
-  const roomUrl = `https://meet.jit.si/${liveClass.roomName}`;
+  const meetingUrl = liveClass.meetingUrl ?? "";
+  const hasMeetingLink = Boolean(meetingUrl.trim());
 
   return (
     <DashboardLayout
@@ -190,15 +194,15 @@ export default function LiveClassPage({ session, liveClass, canManage, canJoin }
                     tone="default"
                   />
                 ) : null}
-                {canManage ? (
+                {canDelete ? (
                   <ApiActionButton
                     action={`/api/live-classes/${liveClass.id}`}
                     method="DELETE"
-                    successMessage="Live class cancelled."
-                    label="Cancel"
-                    pendingLabel="Cancelling..."
+                    successMessage="Live class deleted."
+                    label="Delete"
+                    pendingLabel="Deleting..."
                     tone="danger"
-                    confirmMessage="Cancel this live class? Students will no longer be able to join it."
+                    confirmMessage="Delete this live class? Students will no longer be able to access it."
                   />
                 ) : null}
               </div>
@@ -207,12 +211,28 @@ export default function LiveClassPage({ session, liveClass, canManage, canJoin }
             {liveClass.description ? <p className="mt-4 max-w-4xl text-sm text-slate-600">{liveClass.description}</p> : null}
 
             {canJoin || canManage ? (
-              <div className="mt-6">
-                <JitsiMeeting
-                  roomName={liveClass.roomName}
-                  displayName={session.fullName}
-                  email={session.email}
-                />
+              <div className="mt-6 rounded-[24px] border border-[#efe6ff] bg-[#faf7ff] p-6">
+                {hasMeetingLink ? (
+                  <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
+                    <div className="space-y-2">
+                      <p className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-500">Meeting link</p>
+                      <p className="break-all text-sm text-slate-700">{meetingUrl}</p>
+                    </div>
+                    <a
+                      href={meetingUrl}
+                      target="_blank"
+                      rel="noreferrer noopener"
+                      className="inline-flex items-center justify-center rounded-2xl bg-[linear-gradient(135deg,#6b00ff,#8c3cff)] px-5 py-3 text-sm font-semibold text-white"
+                    >
+                      Open live class
+                    </a>
+                  </div>
+                ) : (
+                  <EmptyState
+                    title="No meeting link provided"
+                    description="Ask the instructor or admin to add the live class link in the schedule form."
+                  />
+                )}
               </div>
             ) : (
               <div className="mt-6 rounded-[24px] border border-[#efe6ff] bg-[#faf7ff] p-6">
@@ -225,7 +245,7 @@ export default function LiveClassPage({ session, liveClass, canManage, canJoin }
           </Panel>
         </div>
 
-        <Panel title="Participants" subtitle="Use the meeting toolbar for the live attendee list, or view the course roster here.">
+        <Panel title="Participants" subtitle="Use the course roster to see who can access this live class.">
           <div className="space-y-3">
             {participantNames.length ? (
               participantNames.map((participantName, index) => (
@@ -242,4 +262,3 @@ export default function LiveClassPage({ session, liveClass, canManage, canJoin }
     </DashboardLayout>
   );
 }
-

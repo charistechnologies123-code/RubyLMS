@@ -169,7 +169,7 @@ model LiveClass {
   id          String          @id @default(cuid())
   title       String
   description String?
-  roomName    String          @unique
+  meetingUrl  String?
   startsAt    DateTime
   endsAt      DateTime?
   status      LiveClassStatus @default(SCHEDULED)

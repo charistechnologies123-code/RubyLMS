@@ -8,11 +8,11 @@ import EmptyState from "@/components/ui/EmptyState";
 import FormField from "@/components/ui/FormField";
 import Panel from "@/components/ui/Panel";
 import { assertRoleAccess, getDefaultRouteForRole, getSessionFromPageContext } from "@/lib/auth";
-import { canManageCourse } from "@/lib/permissions";
 import { formatDate } from "@/lib/format";
+import { canManageCourse } from "@/lib/permissions";
 import { prisma } from "@/lib/prisma";
 import { serialize } from "@/lib/serialize";
-import { getLiveClassStateLabel } from "@/lib/liveClasses";
+import { canDeleteLiveClass, getLiveClassStateLabel } from "@/lib/liveClasses";
 
 export async function getServerSideProps(ctx: GetServerSidePropsContext) {
   const session = getSessionFromPageContext(ctx);
@@ -136,7 +136,7 @@ export default function CourseLiveClassesPage({ session, course, canManage }: In
       title={`${course.title} • Live Classes`}
       description="Schedule and manage live sessions for this course. Students can join directly from their dashboard when the session is ready."
     >
-      <Panel className="mb-6" title="Course Live Classes" subtitle="Use this space to plan your sessions and send students into the room when it is time.">
+      <Panel className="mb-6" title="Course Live Classes" subtitle="Use this space to plan your sessions and send students into the session when it is time.">
         <div className="flex flex-wrap items-center gap-2">
           <Badge tone="slate">{course.enrollments.length} enrolled</Badge>
           <Badge tone="slate">{upcomingLiveClasses.length} active/upcoming</Badge>
@@ -153,6 +153,7 @@ export default function CourseLiveClassesPage({ session, course, canManage }: In
               course.liveClasses.map((liveClass: any) => {
                 const isStarted = new Date(liveClass.startsAt).getTime() <= now;
                 const isJoinable = liveClass.status === "LIVE" || (isStarted && liveClass.status !== "CANCELLED" && liveClass.status !== "ENDED");
+                const canDelete = canDeleteLiveClass(session, liveClass);
 
                 return (
                   <article key={liveClass.id} className="rounded-[24px] border border-[#efe6ff] bg-white p-4">
@@ -178,7 +179,7 @@ export default function CourseLiveClassesPage({ session, course, canManage }: In
                             : "border border-[#e8ddff] bg-white text-[#6b00ff]"
                         }`}
                       >
-                        {isJoinable ? "Open live room" : "View details"}
+                        {isJoinable ? "Open live class" : "View details"}
                       </Link>
                       {canManage ? (
                         <>
@@ -202,16 +203,18 @@ export default function CourseLiveClassesPage({ session, course, canManage }: In
                             disabled={liveClass.status !== "LIVE"}
                             tone="default"
                           />
-                          <ApiActionButton
-                            action={`/api/live-classes/${liveClass.id}`}
-                            method="DELETE"
-                            successMessage="Live class cancelled."
-                            label="Cancel"
-                            pendingLabel="Cancelling..."
-                            tone="danger"
-                            confirmMessage="Cancel this live class? Students will no longer be able to join it."
-                          />
                         </>
+                      ) : null}
+                      {canDelete ? (
+                        <ApiActionButton
+                          action={`/api/live-classes/${liveClass.id}`}
+                          method="DELETE"
+                          successMessage="Live class deleted."
+                          label="Delete"
+                          pendingLabel="Deleting..."
+                          tone="danger"
+                          confirmMessage="Delete this live class? Students will no longer be able to access it."
+                        />
                       ) : null}
                     </div>
                   </article>
@@ -234,6 +237,7 @@ export default function CourseLiveClassesPage({ session, course, canManage }: In
               <input type="hidden" name="courseId" value={course.id} />
               <FormField label="Session title" name="title" required placeholder="Week 4 discussion, live lab, office hours..." />
               <FormField label="Description" name="description" as="textarea" rows={5} placeholder="Optional session notes or objectives." />
+              <FormField label="Meeting link" name="meetingUrl" type="url" required placeholder="https://meet.google.com/..., https://teams.microsoft.com/..., or another meeting link" />
               <FormField label="Start time" name="startsAt" type="datetime-local" required />
               <FormField label="End time" name="endsAt" type="datetime-local" />
             </ApiForm>
@@ -243,7 +247,7 @@ export default function CourseLiveClassesPage({ session, course, canManage }: In
         </Panel>
       </section>
 
-      <Panel className="mt-6" title="Course participants" subtitle="This roster shows who is eligible to join the session. The meeting toolbar also includes the live participants pane.">
+      <Panel className="mt-6" title="Course participants" subtitle="This roster shows who is eligible to join the session.">
         <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
           {course.instructor ? (
             <div className="rounded-[22px] border border-[#efe6ff] bg-[#faf7ff] p-4">
@@ -268,4 +272,3 @@ export default function CourseLiveClassesPage({ session, course, canManage }: In
     </DashboardLayout>
   );
 }
-

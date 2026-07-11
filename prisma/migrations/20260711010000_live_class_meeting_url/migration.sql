@@ -1,0 +1,2 @@
+ALTER TABLE IF EXISTS "LiveClass"
+  ADD COLUMN IF NOT EXISTS "meetingUrl" TEXT;

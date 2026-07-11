@@ -1,4 +1,4 @@
-﻿import type { GetServerSidePropsContext, InferGetServerSidePropsType } from "next";
+import type { GetServerSidePropsContext, InferGetServerSidePropsType } from "next";
 import Link from "next/link";
 import DashboardLayout from "@/components/dashboard/DashboardLayout";
 import Badge from "@/components/ui/Badge";
@@ -130,7 +130,7 @@ export default function InstructorDashboard({
                             href={`/live-classes/${liveClass.id}`}
                             className="rounded-full bg-[linear-gradient(135deg,#6b00ff,#8c3cff)] px-3 py-2 text-xs font-semibold text-white"
                           >
-                            Open room
+                            Open live class
                           </Link>
                         </div>
                       </div>

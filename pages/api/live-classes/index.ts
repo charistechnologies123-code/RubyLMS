@@ -1,7 +1,7 @@
 ﻿import type { NextApiResponse } from "next";
 import { Prisma } from "@prisma/client";
 import { withApiAuth, type AuthedNextApiRequest } from "@/lib/api";
-import { canManageLiveClass, buildLiveClassRoomName } from "@/lib/liveClasses";
+import { canManageLiveClass } from "@/lib/liveClasses";
 import { prisma } from "@/lib/prisma";
 
 const liveClassInclude = {
@@ -52,6 +52,24 @@ const liveClassInclude = {
     },
   },
 } satisfies Prisma.LiveClassInclude;
+
+function normalizeMeetingUrl(meetingUrl: string) {
+  const trimmedMeetingUrl = meetingUrl.trim();
+
+  if (!trimmedMeetingUrl) {
+    return null;
+  }
+
+  try {
+    const url = new URL(trimmedMeetingUrl);
+    if (!url.protocol.startsWith("http")) {
+      return null;
+    }
+    return url.toString();
+  } catch {
+    return null;
+  }
+}
 
 async function handler(req: AuthedNextApiRequest, res: NextApiResponse) {
   try {
@@ -151,17 +169,24 @@ async function handler(req: AuthedNextApiRequest, res: NextApiResponse) {
     }
 
     if (req.method === "POST") {
-      const { courseId, title, description, startsAt, endsAt, allowChat } = req.body as {
+      const { courseId, title, description, startsAt, endsAt, meetingUrl, allowChat } = req.body as {
         courseId?: string;
         title?: string;
         description?: string;
         startsAt?: string;
         endsAt?: string;
+        meetingUrl?: string;
         allowChat?: boolean;
       };
 
-      if (!courseId || !title || !startsAt) {
-        return res.status(400).json({ error: "courseId, title, and startsAt are required." });
+      if (!courseId || !title || !startsAt || !meetingUrl) {
+        return res.status(400).json({ error: "courseId, title, startsAt, and meetingUrl are required." });
+      }
+
+      const normalizedMeetingUrl = normalizeMeetingUrl(meetingUrl);
+
+      if (!normalizedMeetingUrl) {
+        return res.status(400).json({ error: "meetingUrl must be a valid http or https URL." });
       }
 
       const course = await prisma.course.findUnique({
@@ -203,8 +228,8 @@ async function handler(req: AuthedNextApiRequest, res: NextApiResponse) {
           description: description?.trim() || null,
           startsAt: startsAtDate,
           endsAt: endsAtDate,
+          meetingUrl: normalizedMeetingUrl,
           allowChat: typeof allowChat === "boolean" ? allowChat : true,
-          roomName: buildLiveClassRoomName(course.slug),
           createdById: req.session.userId,
           status: startsAtDate.getTime() <= Date.now() ? "LIVE" : "SCHEDULED",
         },
@@ -226,4 +251,3 @@ async function handler(req: AuthedNextApiRequest, res: NextApiResponse) {
 }
 
 export default withApiAuth(handler, ["ADMIN", "INSTRUCTOR", "STUDENT"]);
-

@@ -9,15 +9,20 @@ export type LiveClassCourseContext = {
   courseManagers: Array<{ userId: string }>;
 };
 
-export function buildLiveClassRoomName(courseSlug: string) {
-  return `rubylms-${courseSlug}-${crypto.randomUUID()}`;
-}
+export type LiveClassDeleteContext = {
+  createdById: string;
+  course: LiveClassCourseContext;
+};
 
 export function canManageLiveClass(session: SessionUser, course: LiveClassCourseContext) {
   return canManageCourse(
     session,
     [course.instructorId, course.createdById, ...course.courseManagers.map((manager) => manager.userId)].filter(Boolean) as string[],
   );
+}
+
+export function canDeleteLiveClass(session: SessionUser, liveClass: LiveClassDeleteContext) {
+  return session.role === "ADMIN" || liveClass.createdById === session.userId || liveClass.course.instructorId === session.userId;
 }
 
 export function isLiveClassJoinable(liveClass: {
@@ -71,4 +76,3 @@ export function getLiveClassStateLabel(liveClass: {
 
   return liveClass.status === "LIVE" ? "Live now" : "Ready to join";
 }
-

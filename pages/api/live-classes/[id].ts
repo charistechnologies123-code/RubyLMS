@@ -1,7 +1,7 @@
 ﻿import type { NextApiResponse } from "next";
 import { Prisma } from "@prisma/client";
 import { withApiAuth, type AuthedNextApiRequest } from "@/lib/api";
-import { canManageLiveClass, isLiveClassJoinable } from "@/lib/liveClasses";
+import { canDeleteLiveClass, canManageLiveClass, isLiveClassJoinable } from "@/lib/liveClasses";
 import { prisma } from "@/lib/prisma";
 
 const liveClassInclude = {
@@ -53,6 +53,24 @@ const liveClassInclude = {
   },
 } satisfies Prisma.LiveClassInclude;
 
+function normalizeMeetingUrl(meetingUrl: string) {
+  const trimmedMeetingUrl = meetingUrl.trim();
+
+  if (!trimmedMeetingUrl) {
+    return null;
+  }
+
+  try {
+    const url = new URL(trimmedMeetingUrl);
+    if (!url.protocol.startsWith("http")) {
+      return null;
+    }
+    return url.toString();
+  } catch {
+    return null;
+  }
+}
+
 async function handler(req: AuthedNextApiRequest, res: NextApiResponse) {
   try {
     const liveClassId = String(req.query.id ?? "");
@@ -68,7 +86,8 @@ async function handler(req: AuthedNextApiRequest, res: NextApiResponse) {
 
     const isMember = liveClass.course.enrollments.some((enrollment) => enrollment.studentId === req.session.userId);
     const isManager = canManageLiveClass(req.session, liveClass.course);
-    const isJoinAllowed = isLiveClassJoinable(liveClass);
+    const hasMeetingLink = Boolean(liveClass.meetingUrl?.trim());
+    const isJoinAllowed = isLiveClassJoinable(liveClass) && hasMeetingLink;
 
     if (req.method === "GET") {
       if (!isMember && !isManager && req.session.role !== "ADMIN") {
@@ -87,17 +106,19 @@ async function handler(req: AuthedNextApiRequest, res: NextApiResponse) {
         return res.status(403).json({ error: "Only course instructors, managers, and admins can update live classes." });
       }
 
-      const { title, description, startsAt, endsAt, status, allowChat } = req.body as {
+      const { title, description, startsAt, endsAt, status, allowChat, meetingUrl } = req.body as {
         title?: string;
         description?: string;
         startsAt?: string;
         endsAt?: string;
         status?: "SCHEDULED" | "LIVE" | "ENDED" | "CANCELLED";
         allowChat?: boolean;
+        meetingUrl?: string;
       };
 
       const startsAtDate = startsAt ? new Date(startsAt) : null;
       const endsAtDate = endsAt ? new Date(endsAt) : null;
+      const normalizedMeetingUrl = typeof meetingUrl === "string" ? meetingUrl.trim() : undefined;
 
       if (startsAtDate && Number.isNaN(startsAtDate.getTime())) {
         return res.status(400).json({ error: "Invalid startsAt value." });
@@ -111,6 +132,14 @@ async function handler(req: AuthedNextApiRequest, res: NextApiResponse) {
         return res.status(400).json({ error: "endsAt must be after startsAt." });
       }
 
+      if (typeof meetingUrl === "string" && !normalizedMeetingUrl) {
+        return res.status(400).json({ error: "meetingUrl cannot be empty." });
+      }
+
+      if (normalizedMeetingUrl && !normalizeMeetingUrl(normalizedMeetingUrl)) {
+        return res.status(400).json({ error: "meetingUrl must be a valid http or https URL." });
+      }
+
       const updatedLiveClass = await prisma.liveClass.update({
         where: { id: liveClassId },
         data: {
@@ -120,6 +149,7 @@ async function handler(req: AuthedNextApiRequest, res: NextApiResponse) {
           endsAt: endsAtDate ?? undefined,
           status,
           allowChat,
+          meetingUrl: normalizedMeetingUrl ?? undefined,
         },
         include: liveClassInclude,
       });
@@ -128,8 +158,8 @@ async function handler(req: AuthedNextApiRequest, res: NextApiResponse) {
     }
 
     if (req.method === "DELETE") {
-      if (!isManager && req.session.role !== "ADMIN") {
-        return res.status(403).json({ error: "Only course instructors, managers, and admins can cancel live classes." });
+      if (!canDeleteLiveClass(req.session, liveClass)) {
+        return res.status(403).json({ error: "Only the course instructor, live class creator, or an admin can delete this live class." });
       }
 
       await prisma.liveClass.update({
@@ -152,4 +182,3 @@ async function handler(req: AuthedNextApiRequest, res: NextApiResponse) {
 }
 
 export default withApiAuth(handler, ["ADMIN", "INSTRUCTOR", "STUDENT"]);
-
