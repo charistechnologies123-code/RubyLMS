@@ -1,5 +1,6 @@
 "use client";
 
+import Image from "next/image";
 import { useRouter } from "next/router";
 import { useState } from "react";
 import toast from "react-hot-toast";
@@ -59,8 +60,14 @@ export default function LoginPage() {
     <main className="min-h-screen bg-[radial-gradient(circle_at_top_left,_rgba(107,0,255,0.18),_transparent_30%),radial-gradient(circle_at_bottom_right,_rgba(255,30,30,0.15),_transparent_24%),linear-gradient(180deg,_#fff8fc_0%,_#faf7ff_100%)] px-4 py-8">
       <div className="mx-auto flex min-h-[calc(100vh-4rem)] max-w-2xl items-center justify-center">
         <section className="panel w-full rounded-[36px] p-6 sm:p-8">
-          <div className="text-center">
-            <h1 className="font-heading text-3xl text-slate-950 sm:text-4xl">Sign in to continue</h1>
+          <div className="flex justify-center">
+            <Image src="/logo.svg" alt="Ruby LMS logo" width={220} height={147} style={{ height: "auto" }} priority />
+          </div>
+          <div className="mt-4 text-center">
+            <div className="inline-flex rounded-full border border-[#e8ddff] bg-[#f7f1ff] px-4 py-2 text-xs font-semibold uppercase tracking-[0.26em] text-[#6b00ff]">
+              Charis Technologies
+            </div>
+            <h1 className="mt-4 font-heading text-3xl text-slate-950 sm:text-4xl">Sign in to continue</h1>
             <p className="mt-2 text-sm text-slate-600">
               Students use email or student ID. Instructors and admins use email only.
             </p>
