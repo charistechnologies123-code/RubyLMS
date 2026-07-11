@@ -90,7 +90,10 @@ export default function StudentDashboard({
   notifications,
   stats,
 }: InferGetServerSidePropsType<typeof getServerSideProps>) {
-  const liveClasses = enrollments.flatMap((enrollment: any) => enrollment.course.liveClasses.map((liveClass: any) => ({ ...liveClass, courseTitle: enrollment.course.title })));
+  const today = new Date();
+  const liveClasses = enrollments
+    .flatMap((enrollment: any) => enrollment.course.liveClasses.map((liveClass: any) => ({ ...liveClass, courseTitle: enrollment.course.title })))
+    .filter((liveClass: any) => new Date(liveClass.startsAt).toDateString() === today.toDateString());
 
   return (
     <DashboardLayout
@@ -221,6 +224,8 @@ export default function StudentDashboard({
     </DashboardLayout>
   );
 }
+
+
 
 
 

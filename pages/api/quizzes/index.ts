@@ -14,6 +14,7 @@ type QuestionPayload = {
   answerText?: string;
   options?: Array<{ optionText: string; isCorrect: boolean }>;
   matchingPairs?: Array<{ promptText: string; answerText: string }>;
+  acceptedAnswers?: string[];
 };
 
 async function handler(req: AuthedNextApiRequest, res: NextApiResponse) {
@@ -128,6 +129,7 @@ async function handler(req: AuthedNextApiRequest, res: NextApiResponse) {
                     answerText: question.answerText || "",
                     options: question.options ?? [],
                     matchingPairs: question.matchingPairs ?? [],
+                    acceptedAnswers: question.acceptedAnswers ?? [],
                   },
                   options: {
                     create: (question.options ?? []).map((option, optionIndex) => ({

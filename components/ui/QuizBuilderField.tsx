@@ -1,4 +1,4 @@
-"use client";
+﻿"use client";
 
 import type { ChangeEvent } from "react";
 import { useId, useMemo, useState } from "react";
@@ -30,6 +30,7 @@ type QuizQuestionForm = {
   answerText: string;
   options: QuizOptionForm[];
   matchingPairs: QuizMatchingPairForm[];
+  acceptedAnswers: string[];
 };
 
 type QuizBuilderFieldProps = {
@@ -59,7 +60,6 @@ export default function QuizBuilderField({
           questionType: question.questionType,
           marks: Number(question.marks || 1),
           explanation: question.explanation,
-          answerText: question.answerText,
           options: question.options
             .filter((option) => option.optionText.trim())
             .map((option) => ({
@@ -72,15 +72,14 @@ export default function QuizBuilderField({
               promptText: pair.promptText,
               answerText: pair.answerText,
             })),
+          acceptedAnswers: question.acceptedAnswers.filter((answer) => answer.trim()),
         })),
       ),
     [questions],
   );
 
   function updateQuestion(questionId: string, updates: Partial<QuizQuestionForm>) {
-    setQuestions((current) =>
-      current.map((question) => (question.id === questionId ? { ...question, ...updates } : question)),
-    );
+    setQuestions((current) => current.map((question) => (question.id === questionId ? { ...question, ...updates } : question)));
   }
 
   function updateQuestionType(questionId: string, questionType: QuizQuestionType) {
@@ -102,9 +101,7 @@ export default function QuizBuilderField({
           return question;
         }
 
-        const nextOptions = question.options.map((option, index) =>
-          index === optionIndex ? { ...option, ...updates } : option,
-        );
+        const nextOptions = question.options.map((option, index) => (index === optionIndex ? { ...option, ...updates } : option));
 
         return { ...question, options: nextOptions };
       }),
@@ -118,11 +115,62 @@ export default function QuizBuilderField({
           return question;
         }
 
-        const nextPairs = question.matchingPairs.map((pair, index) =>
-          index === pairIndex ? { ...pair, ...updates } : pair,
-        );
+        const nextPairs = question.matchingPairs.map((pair, index) => (index === pairIndex ? { ...pair, ...updates } : pair));
 
         return { ...question, matchingPairs: nextPairs };
+      }),
+    );
+  }
+
+  function updateAcceptedAnswer(questionId: string, answerIndex: number, value: string) {
+    setQuestions((current) =>
+      current.map((question) => {
+        if (question.id !== questionId) {
+          return question;
+        }
+
+        const nextAnswers = question.acceptedAnswers.map((answer, index) => (index === answerIndex ? value : answer));
+        return { ...question, acceptedAnswers: nextAnswers };
+      }),
+    );
+  }
+
+  function addMatchingPair(questionId: string) {
+    setQuestions((current) =>
+      current.map((question) =>
+        question.id === questionId ? { ...question, matchingPairs: [...question.matchingPairs, createMatchingPair()] } : question,
+      ),
+    );
+  }
+
+  function removeMatchingPair(questionId: string, pairIndex: number) {
+    setQuestions((current) =>
+      current.map((question) => {
+        if (question.id !== questionId || question.matchingPairs.length === 1) {
+          return question;
+        }
+
+        return { ...question, matchingPairs: question.matchingPairs.filter((_, index) => index !== pairIndex) };
+      }),
+    );
+  }
+
+  function addAcceptedAnswer(questionId: string) {
+    setQuestions((current) =>
+      current.map((question) =>
+        question.id === questionId ? { ...question, acceptedAnswers: [...question.acceptedAnswers, ""] } : question,
+      ),
+    );
+  }
+
+  function removeAcceptedAnswer(questionId: string, answerIndex: number) {
+    setQuestions((current) =>
+      current.map((question) => {
+        if (question.id !== questionId || question.acceptedAnswers.length === 1) {
+          return question;
+        }
+
+        return { ...question, acceptedAnswers: question.acceptedAnswers.filter((_, index) => index !== answerIndex) };
       }),
     );
   }
@@ -178,6 +226,7 @@ export default function QuizBuilderField({
           answerText: row.answerText ?? "",
           options,
           matchingPairs: [createMatchingPair(), createMatchingPair()],
+          acceptedAnswers: [""],
         } satisfies QuizQuestionForm;
       });
 
@@ -301,9 +350,18 @@ export default function QuizBuilderField({
 
               {isMatching ? (
                 <div className="mt-4 space-y-3">
-                  <p className="text-sm font-semibold text-slate-700">Matching pairs</p>
+                  <div className="flex items-center justify-between gap-3">
+                    <p className="text-sm font-semibold text-slate-700">Matching pairs</p>
+                    <button
+                      type="button"
+                      onClick={() => addMatchingPair(question.id)}
+                      className="text-sm font-semibold text-[#6b00ff]"
+                    >
+                      Add pair
+                    </button>
+                  </div>
                   {question.matchingPairs.map((pair, pairIndex) => (
-                    <div key={`${question.id}-pair-${pairIndex}`} className="grid gap-3 md:grid-cols-2">
+                    <div key={`${question.id}-pair-${pairIndex}`} className="grid gap-3 md:grid-cols-[1fr_1fr_auto]">
                       <input
                         className={fieldClassName}
                         type="text"
@@ -318,6 +376,14 @@ export default function QuizBuilderField({
                         value={pair.answerText}
                         onChange={(event) => updateMatchingPair(question.id, pairIndex, { answerText: event.target.value })}
                       />
+                      <button
+                        type="button"
+                        onClick={() => removeMatchingPair(question.id, pairIndex)}
+                        className="rounded-2xl border border-[#e8ddff] bg-white px-4 py-3 text-sm font-semibold text-[#c62828] disabled:opacity-50"
+                        disabled={question.matchingPairs.length === 1}
+                      >
+                        Remove
+                      </button>
                     </div>
                   ))}
                 </div>
@@ -325,14 +391,35 @@ export default function QuizBuilderField({
 
               {isStructural ? (
                 <div className="mt-4 space-y-3">
-                  <p className="text-sm font-semibold text-slate-700">Structural answer</p>
-                  <textarea
-                    className={fieldClassName}
-                    rows={4}
-                    value={question.answerText}
-                    onChange={(event) => updateQuestion(question.id, { answerText: event.target.value })}
-                    placeholder="Enter the expected answer or rubric notes"
-                  />
+                  <div className="flex items-center justify-between gap-3">
+                    <p className="text-sm font-semibold text-slate-700">Accepted answers</p>
+                    <button
+                      type="button"
+                      onClick={() => addAcceptedAnswer(question.id)}
+                      className="text-sm font-semibold text-[#6b00ff]"
+                    >
+                      Add answer
+                    </button>
+                  </div>
+                  {question.acceptedAnswers.map((answer, answerIndex) => (
+                    <div key={`${question.id}-answer-${answerIndex}`} className="grid gap-3 md:grid-cols-[1fr_auto]">
+                      <input
+                        className={fieldClassName}
+                        type="text"
+                        value={answer}
+                        onChange={(event) => updateAcceptedAnswer(question.id, answerIndex, event.target.value)}
+                        placeholder={`Accepted answer ${answerIndex + 1}`}
+                      />
+                      <button
+                        type="button"
+                        onClick={() => removeAcceptedAnswer(question.id, answerIndex)}
+                        className="rounded-2xl border border-[#e8ddff] bg-white px-4 py-3 text-sm font-semibold text-[#c62828] disabled:opacity-50"
+                        disabled={question.acceptedAnswers.length === 1}
+                      >
+                        Remove
+                      </button>
+                    </div>
+                  ))}
                 </div>
               ) : null}
             </div>
@@ -368,11 +455,19 @@ const fieldClassName =
   "w-full rounded-2xl border border-[#e8ddff] bg-white px-4 py-3 text-sm text-slate-900 outline-none transition placeholder:text-slate-400 focus:border-[#6b00ff] focus:ring-2 focus:ring-[#efe4ff]";
 
 function normalizeQuestionSeed(question: any): QuizQuestionForm {
+  const matchingPairs = Array.isArray(question.matchingPairs) && question.matchingPairs.length
+    ? question.matchingPairs
+    : [createMatchingPair(), createMatchingPair()];
+  const acceptedAnswers = Array.isArray(question.acceptedAnswers) && question.acceptedAnswers.length
+    ? question.acceptedAnswers
+    : [""];
+
   return {
     ...question,
     answerText: question.answerText ?? "",
-    options: question.options.length ? question.options : createChoiceOptions(4),
-    matchingPairs: question.matchingPairs ?? [],
+    options: Array.isArray(question.options) && question.options.length ? question.options : createChoiceOptions(4),
+    matchingPairs,
+    acceptedAnswers,
   };
 }
 
@@ -386,6 +481,7 @@ function createQuestion(): QuizQuestionForm {
     answerText: "",
     options: createChoiceOptions(4),
     matchingPairs: [createMatchingPair(), createMatchingPair()],
+    acceptedAnswers: [""],
   };
 }
 
@@ -405,9 +501,9 @@ function adaptQuestionType(question: QuizQuestionForm, questionType: QuizQuestio
     return {
       ...question,
       questionType,
-      answerText: "",
       options: [],
       matchingPairs: question.matchingPairs.length ? question.matchingPairs : [createMatchingPair(), createMatchingPair()],
+      acceptedAnswers: [],
     };
   }
 
@@ -417,6 +513,7 @@ function adaptQuestionType(question: QuizQuestionForm, questionType: QuizQuestio
       questionType,
       options: [],
       matchingPairs: [],
+      acceptedAnswers: question.acceptedAnswers.length ? question.acceptedAnswers : [""],
     };
   }
 
@@ -427,6 +524,7 @@ function adaptQuestionType(question: QuizQuestionForm, questionType: QuizQuestio
       answerText: "",
       options: ensureTrueFalseOptions(question.options),
       matchingPairs: [],
+      acceptedAnswers: [],
     };
   }
 
@@ -436,6 +534,7 @@ function adaptQuestionType(question: QuizQuestionForm, questionType: QuizQuestio
     answerText: "",
     options: question.options.length ? question.options : createChoiceOptions(4),
     matchingPairs: [],
+    acceptedAnswers: [],
   };
 }
 
@@ -477,7 +576,7 @@ function parseBoolean(value?: string) {
 function parseCsv(raw: string) {
   const rows = raw
     .trim()
-    .split(/\\r?\\n/)
+    .split(/\r?\n/)
     .map((line) => splitCsvLine(line));
 
   if (rows.length < 2) {
@@ -486,9 +585,7 @@ function parseCsv(raw: string) {
 
   const [header, ...dataRows] = rows;
 
-  return dataRows.map((row) =>
-    Object.fromEntries(header.map((column, index) => [column, row[index] ?? ""])),
-  );
+  return dataRows.map((row) => Object.fromEntries(header.map((column, index) => [column, row[index] ?? ""])));
 }
 
 function splitCsvLine(line: string) {
@@ -521,6 +618,10 @@ function splitCsvLine(line: string) {
   values.push(current);
   return values;
 }
+
+
+
+
 
 
 

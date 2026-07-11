@@ -1,4 +1,4 @@
-import type { NextApiResponse } from "next";
+﻿import type { NextApiResponse } from "next";
 import { prisma } from "@/lib/prisma";
 import { createAuditLog } from "@/lib/audit";
 import { withApiAuth, type AuthedNextApiRequest } from "@/lib/api";
@@ -9,7 +9,10 @@ type QuizQuestionPayload = {
   questionType: "SINGLE_CHOICE" | "MULTIPLE_CHOICE" | "MATCHING" | "STRUCTURAL" | "TRUE_FALSE";
   marks?: number;
   explanation?: string;
+  answerText?: string;
   options: Array<{ optionText: string; isCorrect: boolean }>;
+  matchingPairs?: Array<{ promptText: string; answerText: string }>;
+  acceptedAnswers?: string[];
 };
 
 function parseQuestions(questions?: string) {
@@ -44,6 +47,7 @@ async function handler(req: AuthedNextApiRequest, res: NextApiResponse) {
               options: {
                 orderBy: { order: "asc" },
               },
+
             },
           },
         },
@@ -208,6 +212,15 @@ async function handler(req: AuthedNextApiRequest, res: NextApiResponse) {
               questionType: question.questionType,
               explanation: question.explanation || null,
               marks: question.marks ?? 1,
+              questionData: {
+                questionText: question.questionText,
+                questionType: question.questionType,
+                explanation: question.explanation || null,
+                answerText: question.answerText || "",
+                options: question.options ?? [],
+                matchingPairs: question.matchingPairs ?? [],
+                acceptedAnswers: question.acceptedAnswers ?? [],
+              },
               options: {
                 create: question.options.map((option, optionIndex) => ({
                   optionText: option.optionText,
@@ -246,4 +259,9 @@ async function handler(req: AuthedNextApiRequest, res: NextApiResponse) {
 }
 
 export default withApiAuth(handler, ["ADMIN", "INSTRUCTOR", "STUDENT"]);
+
+
+
+
+
 

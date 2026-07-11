@@ -490,6 +490,7 @@ model QuizAnswer {
   attemptId        String
   quizQuestionId   String
   selectedOptionId String?
+  answerData       Json?
 
   attempt          QuizAttempt     @relation(fields: [attemptId], references: [id], onDelete: Cascade)
   quizQuestion     QuizQuestion    @relation(fields: [quizQuestionId], references: [id], onDelete: Cascade)
@@ -725,6 +726,8 @@ model GradebookCell {
   @@index([selectedQuizAttemptId])
   @@index([selectedAssignmentSubmissionId])
 }
+
+
 
 
 

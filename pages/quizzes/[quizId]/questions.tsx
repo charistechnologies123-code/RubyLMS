@@ -1,4 +1,4 @@
-import type { GetServerSidePropsContext, GetServerSidePropsResult } from "next";
+﻿import type { GetServerSidePropsContext, GetServerSidePropsResult } from "next";
 import Link from "next/link";
 import DashboardLayout from "@/components/dashboard/DashboardLayout";
 import ApiForm from "@/components/ui/ApiForm";
@@ -20,6 +20,11 @@ type BuilderQuestion = {
     optionText: string;
     isCorrect: boolean;
   }>;
+  matchingPairs: Array<{
+    promptText: string;
+    answerText: string;
+  }>;
+  acceptedAnswers: string[];
 };
 
 type QuizQuestionEditorProps = {
@@ -71,6 +76,7 @@ export async function getServerSideProps(
               options: {
                 orderBy: { order: "asc" },
               },
+
             },
           },
         },
@@ -98,6 +104,8 @@ export async function getServerSideProps(
       optionText: option.optionText,
       isCorrect: option.isCorrect,
     })),
+    matchingPairs: ((question.questionBank.questionData as any)?.matchingPairs ?? []),
+    acceptedAnswers: ((question.questionBank.questionData as any)?.acceptedAnswers ?? []),
   }));
 
   return {
@@ -172,6 +180,10 @@ export default function QuizQuestionEditorPage({
     </DashboardLayout>
   );
 }
+
+
+
+
 
 
 

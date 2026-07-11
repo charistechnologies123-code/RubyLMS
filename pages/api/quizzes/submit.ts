@@ -1,8 +1,33 @@
-import type { NextApiResponse } from "next";
+﻿import type { NextApiResponse } from "next";
 import { prisma } from "@/lib/prisma";
 import { notifyUsers } from "@/lib/notifications";
 import { canStudentSubmitBeforeDueDate } from "@/lib/lms";
 import { withApiAuth, type AuthedNextApiRequest } from "@/lib/api";
+
+type SubmittedAnswer = {
+  quizQuestionId: string;
+  selectedOptionIds?: string[];
+  matchingSelections?: string[];
+  textAnswer?: string;
+};
+
+type StoredQuestionData = {
+  questionText?: string;
+  questionType?: string;
+  explanation?: string;
+  answerText?: string;
+  options?: Array<{ optionText: string; isCorrect: boolean }>;
+  matchingPairs?: Array<{ promptText: string; answerText: string }>;
+  acceptedAnswers?: string[];
+};
+
+function normalizeText(value: string) {
+  return value.trim().toLowerCase();
+}
+
+function normalizeQuestionData(questionData: unknown): StoredQuestionData {
+  return typeof questionData === "object" && questionData !== null ? (questionData as StoredQuestionData) : {};
+}
 
 async function handler(req: AuthedNextApiRequest, res: NextApiResponse) {
   if (req.method !== "POST") {
@@ -16,7 +41,7 @@ async function handler(req: AuthedNextApiRequest, res: NextApiResponse) {
   const { quizId, attemptId, answers } = req.body as {
     quizId?: string;
     attemptId?: string;
-    answers?: Array<{ quizQuestionId: string; selectedOptionId?: string }>;
+    answers?: SubmittedAnswer[];
   };
 
   if (!quizId || !Array.isArray(answers)) {
@@ -47,16 +72,15 @@ async function handler(req: AuthedNextApiRequest, res: NextApiResponse) {
     return res.status(400).json({ error: "The due date for this quiz has passed." });
   }
 
-  const attempt =
-    attemptId
-      ? await prisma.quizAttempt.findFirst({
-          where: {
-            id: attemptId,
-            quizId,
-            studentId: req.session.userId,
-          },
-        })
-      : null;
+  const attempt = attemptId
+    ? await prisma.quizAttempt.findFirst({
+        where: {
+          id: attemptId,
+          quizId,
+          studentId: req.session.userId,
+        },
+      })
+    : null;
 
   if (!attempt) {
     return res.status(400).json({ error: "Quiz attempt not found. Reopen the quiz and try again." });
@@ -66,22 +90,40 @@ async function handler(req: AuthedNextApiRequest, res: NextApiResponse) {
     return res.status(400).json({ error: "This attempt was already submitted." });
   }
 
+  const answersByQuestion = new Map(answers.map((answer) => [answer.quizQuestionId, answer]));
+
   const score = quiz.quizQuestions.reduce((total, question) => {
-    const correctOptionIds = question.questionBank.options
-      .filter((option) => option.isCorrect)
-      .map((option) => option.id)
-      .sort();
-
-    const selectedIds = answers
-      .filter((answer) => answer.quizQuestionId === question.id && answer.selectedOptionId)
-      .map((answer) => answer.selectedOptionId as string)
-      .sort();
-
-    const isCorrect =
-      correctOptionIds.length === selectedIds.length &&
-      correctOptionIds.every((optionId, index) => optionId === selectedIds[index]);
-
+    const questionType = question.questionBank.questionType;
+    const questionData = normalizeQuestionData(question.questionBank.questionData);
+    const submittedAnswer = answersByQuestion.get(question.id);
     const marks = question.marksOverride ?? question.questionBank.marks;
+
+    let isCorrect = false;
+
+    if (questionType === "STRUCTURAL") {
+      const acceptedAnswers = (questionData.acceptedAnswers ?? [questionData.answerText ?? ""]).map(normalizeText).filter(Boolean);
+      const studentAnswer = normalizeText(submittedAnswer?.textAnswer ?? "");
+      isCorrect = acceptedAnswers.length > 0 && acceptedAnswers.includes(studentAnswer);
+    } else if (questionType === "MATCHING") {
+      const matchingPairs = questionData.matchingPairs ?? [];
+      const selectedMatches = submittedAnswer?.matchingSelections ?? [];
+      isCorrect =
+        matchingPairs.length > 0 &&
+        matchingPairs.length === selectedMatches.length &&
+        matchingPairs.every((pair, index) => normalizeText(pair.answerText) === normalizeText(selectedMatches[index] ?? ""));
+    } else {
+      const correctOptionIds = question.questionBank.options
+        .filter((option) => option.isCorrect)
+        .map((option) => option.id)
+        .sort();
+
+      const selectedIds = (submittedAnswer?.selectedOptionIds ?? []).filter(Boolean).sort();
+
+      isCorrect =
+        correctOptionIds.length === selectedIds.length &&
+        correctOptionIds.every((optionId, index) => optionId === selectedIds[index]);
+    }
+
     return total + (isCorrect ? marks : 0);
   }, 0);
 
@@ -101,7 +143,12 @@ async function handler(req: AuthedNextApiRequest, res: NextApiResponse) {
         answers: {
           create: answers.map((answer) => ({
             quizQuestionId: answer.quizQuestionId,
-            selectedOptionId: answer.selectedOptionId || null,
+            selectedOptionId: answer.selectedOptionIds?.[0] ?? null,
+            answerData: {
+              selectedOptionIds: answer.selectedOptionIds ?? [],
+              matchingSelections: answer.matchingSelections ?? [],
+              textAnswer: answer.textAnswer ?? "",
+            },
           })),
         },
       },
@@ -111,11 +158,7 @@ async function handler(req: AuthedNextApiRequest, res: NextApiResponse) {
     });
   });
 
-  await notifyUsers(
-    [quiz.createdById],
-    "Quiz submitted",
-    `${req.session.fullName} completed ${quiz.title}.`,
-  );
+  await notifyUsers([quiz.createdById], "Quiz submitted", `${req.session.fullName} completed ${quiz.title}.`);
 
   return res.status(200).json({
     attempt: submittedAttempt,

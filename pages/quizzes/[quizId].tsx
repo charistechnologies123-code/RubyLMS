@@ -1,4 +1,4 @@
-import type { GetServerSidePropsContext, GetServerSidePropsResult } from "next";
+﻿import type { GetServerSidePropsContext, GetServerSidePropsResult } from "next";
 import Link from "next/link";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/router";
@@ -41,6 +41,8 @@ type QuizQuestionData = {
   questionBank: {
     questionText: string;
     explanation: string | null;
+    questionType: "SINGLE_CHOICE" | "MULTIPLE_CHOICE" | "MATCHING" | "STRUCTURAL" | "TRUE_FALSE";
+    questionData: any;
     options: QuizQuestionOption[];
   };
 };
@@ -101,7 +103,7 @@ type QuizPageProps = {
 
 export async function getServerSideProps(
   ctx: GetServerSidePropsContext,
-): Promise<GetServerSidePropsResult<QuizPageProps>> {
+): Promise<GetServerSidePropsResult<any>> {
   const session = getSessionFromPageContext(ctx);
 
   if (!session) {
@@ -158,6 +160,7 @@ export async function getServerSideProps(
                   isCorrect: true,
                 },
               },
+
             },
           },
         },
@@ -251,9 +254,7 @@ export async function getServerSideProps(
       optionText: option.optionText,
       isCorrect: option.isCorrect,
     })),
-  }));
-
-  return {
+  }));  return {
     props: {
       session,
       canManage,
@@ -279,6 +280,8 @@ export async function getServerSideProps(
           questionBank: {
             questionText: question.questionBank.questionText,
             explanation: question.questionBank.explanation,
+            questionType: question.questionBank.questionType,
+            questionData: question.questionBank.questionData,
             options: question.questionBank.options.map((option) => ({
               id: option.id,
               optionText: option.optionText,
@@ -300,6 +303,16 @@ function formatRemaining(totalSeconds: number) {
   return `${minutes}:${String(seconds).padStart(2, "0")}`;
 }
 
+function normalizeAnswer(value: string) {
+  return value.trim().toLowerCase();
+}
+
+type StudentAnswerState = {
+  selectedOptionIds: string[];
+  matchingSelections: string[];
+  textAnswer: string;
+};
+
 function QuizAttemptWorkspace({
   quiz,
   activeAttempt,
@@ -312,12 +325,13 @@ function QuizAttemptWorkspace({
   const router = useRouter();
   const { confirm } = useConfirmDialog();
   const [currentQuestionIndex, setCurrentQuestionIndex] = useState(0);
-  const [answers, setAnswers] = useState<Record<string, string>>({});
+  const [answers, setAnswers] = useState<Record<string, StudentAnswerState>>({});
   const [remainingSeconds, setRemainingSeconds] = useState(() =>
     Math.max(0, Math.floor((new Date(activeAttempt.expiresAt).getTime() - Date.now()) / 1000)),
   );
   const [submitting, setSubmitting] = useState(false);
   const autoSubmittedRef = useRef(false);
+
   const submitQuiz = useCallback(async () => {
     if (!autoSubmittedRef.current) {
       const confirmed = await confirm({
@@ -339,9 +353,11 @@ function QuizAttemptWorkspace({
       body: JSON.stringify({
         quizId: quiz.id,
         attemptId: activeAttempt.id,
-        answers: Object.entries(answers).map(([quizQuestionId, selectedOptionId]) => ({
+        answers: Object.entries(answers).map(([quizQuestionId, answer]) => ({
           quizQuestionId,
-          selectedOptionId,
+          selectedOptionIds: answer.selectedOptionIds,
+          matchingSelections: answer.matchingSelections,
+          textAnswer: answer.textAnswer,
         })),
       }),
     });
@@ -381,10 +397,78 @@ function QuizAttemptWorkspace({
   }, [submitQuiz]);
 
   const currentQuestion = quiz.quizQuestions[currentQuestionIndex];
+  const currentQuestionType = currentQuestion.questionBank.questionType;
+  const matchingPairs = (currentQuestion.questionBank.questionData?.matchingPairs ?? []) as Array<{ promptText: string; answerText: string }>;
+  const matchingAnswerChoices = Array.from(
+    new Set(matchingPairs.map((pair) => pair.answerText.trim()).filter(Boolean)),
+  );
   const answeredCount = useMemo(
-    () => quiz.quizQuestions.filter((question) => answers[question.id]).length,
+    () =>
+      quiz.quizQuestions.filter((question) => {
+        const answer = answers[question.id];
+
+        if (!answer) {
+          return false;
+        }
+
+        if (question.questionBank.questionType === "STRUCTURAL") {
+          return Boolean(answer.textAnswer.trim());
+        }
+
+        if (question.questionBank.questionType === "MATCHING") {
+          return answer.matchingSelections.some((selection) => selection.trim());
+        }
+
+        return answer.selectedOptionIds.length > 0;
+      }).length,
     [answers, quiz.quizQuestions],
   );
+
+  function updateChoiceAnswer(questionId: string, optionId: string, allowMultiple: boolean) {
+    setAnswers((current) => {
+      const existing = current[questionId] ?? { selectedOptionIds: [], matchingSelections: [], textAnswer: "" };
+
+      if (!allowMultiple) {
+        return {
+          ...current,
+          [questionId]: { ...existing, selectedOptionIds: [optionId], matchingSelections: [], textAnswer: "" },
+        };
+      }
+
+      const nextSelected = existing.selectedOptionIds.includes(optionId)
+        ? existing.selectedOptionIds.filter((currentOptionId) => currentOptionId !== optionId)
+        : [...existing.selectedOptionIds, optionId];
+
+      return {
+        ...current,
+        [questionId]: { ...existing, selectedOptionIds: nextSelected },
+      };
+    });
+  }
+
+  function updateMatchingAnswer(questionId: string, pairIndex: number, value: string) {
+    setAnswers((current) => {
+      const existing = current[questionId] ?? { selectedOptionIds: [], matchingSelections: [], textAnswer: "" };
+      const nextSelections = [...existing.matchingSelections];
+      nextSelections[pairIndex] = value;
+
+      return {
+        ...current,
+        [questionId]: { ...existing, matchingSelections: nextSelections },
+      };
+    });
+  }
+
+  function updateStructuralAnswer(questionId: string, value: string) {
+    setAnswers((current) => {
+      const existing = current[questionId] ?? { selectedOptionIds: [], matchingSelections: [], textAnswer: "" };
+
+      return {
+        ...current,
+        [questionId]: { ...existing, textAnswer: value },
+      };
+    });
+  }
 
   return (
     <div className="space-y-6">
@@ -404,7 +488,13 @@ function QuizAttemptWorkspace({
         <Panel title="Question Navigation" subtitle="Jump between questions and track progress.">
           <div className="grid grid-cols-4 gap-2">
             {quiz.quizQuestions.map((question, index) => {
-              const isAnswered = Boolean(answers[question.id]);
+              const answer = answers[question.id];
+              const isAnswered =
+                question.questionBank.questionType === "STRUCTURAL"
+                  ? Boolean(answer?.textAnswer.trim())
+                  : question.questionBank.questionType === "MATCHING"
+                    ? Boolean(answer?.matchingSelections.some((selection) => selection.trim()))
+                    : Boolean(answer?.selectedOptionIds.length);
               const isActive = index === currentQuestionIndex;
 
               return (
@@ -436,28 +526,66 @@ function QuizAttemptWorkspace({
               ) : null}
             </div>
 
-            <div className="space-y-3">
-              {currentQuestion.questionBank.options.map((option) => (
-                <label
-                  key={option.id}
-                  className="flex items-center gap-3 rounded-2xl border border-[#eee4ff] bg-white px-4 py-3 text-sm text-slate-700"
-                >
+            {currentQuestionType === "MATCHING" ? (
+              <div className="space-y-3">
+                {matchingPairs.map((pair, pairIndex) => (
+                  <div key={`${currentQuestion.id}-pair-${pairIndex}`} className="grid gap-3 md:grid-cols-[1fr_1fr]">
+                    <div className="rounded-2xl border border-[#eee4ff] bg-[#faf7ff] px-4 py-3 text-sm text-slate-700">
+                      {pair.promptText}
+                    </div>
+                    <select
+                      className="rounded-2xl border border-[#eee4ff] bg-white px-4 py-3 text-sm text-slate-700 outline-none focus:border-[#6b00ff] focus:ring-2 focus:ring-[#efe4ff]"
+                      value={answers[currentQuestion.id]?.matchingSelections?.[pairIndex] ?? ""}
+                      onChange={(event) => updateMatchingAnswer(currentQuestion.id, pairIndex, event.target.value)}
+                    >
+                      <option value="">Select a match</option>
+                      {matchingAnswerChoices.map((answerChoice) => (
+                        <option key={answerChoice} value={answerChoice}>
+                          {answerChoice}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                ))}
+              </div>
+            ) : currentQuestionType === "STRUCTURAL" ? (
+              <div className="space-y-3">
+                <label className="block">
+                  <span className="text-sm font-semibold text-slate-700">Your answer</span>
                   <input
-                    type="radio"
-                    name={currentQuestion.id}
-                    value={option.id}
-                    checked={answers[currentQuestion.id] === option.id}
-                    onChange={() =>
-                      setAnswers((current) => ({
-                        ...current,
-                        [currentQuestion.id]: option.id,
-                      }))
-                    }
+                    className="mt-2 w-full rounded-2xl border border-[#eee4ff] bg-white px-4 py-3 text-sm text-slate-700 outline-none focus:border-[#6b00ff] focus:ring-2 focus:ring-[#efe4ff]"
+                    type="text"
+                    value={answers[currentQuestion.id]?.textAnswer ?? ""}
+                    onChange={(event) => updateStructuralAnswer(currentQuestion.id, event.target.value)}
+                    placeholder="Type your answer"
                   />
-                  {option.optionText}
                 </label>
-              ))}
-            </div>
+              </div>
+            ) : (
+              <div className="space-y-3">
+                {currentQuestion.questionBank.options.map((option) => {
+                  const isMultipleChoice = currentQuestionType === "MULTIPLE_CHOICE";
+                  const selectedIds = answers[currentQuestion.id]?.selectedOptionIds ?? [];
+                  const checked = isMultipleChoice ? selectedIds.includes(option.id) : selectedIds[0] === option.id;
+
+                  return (
+                    <label
+                      key={option.id}
+                      className="flex items-center gap-3 rounded-2xl border border-[#eee4ff] bg-white px-4 py-3 text-sm text-slate-700"
+                    >
+                      <input
+                        type={isMultipleChoice ? "checkbox" : "radio"}
+                        name={currentQuestion.id}
+                        value={option.id}
+                        checked={checked}
+                        onChange={() => updateChoiceAnswer(currentQuestion.id, option.id, isMultipleChoice)}
+                      />
+                      {option.optionText}
+                    </label>
+                  );
+                })}
+              </div>
+            )}
 
             <div className="flex flex-wrap gap-3">
               <button
@@ -513,7 +641,6 @@ function QuizAttemptWorkspace({
     </div>
   );
 }
-
 export default function QuizDetailPage({
   session,
   canManage,
@@ -694,4 +821,16 @@ function StartQuizButton({ quizId }: { quizId: string }) {
     />
   );
 }
+
+
+
+
+
+
+
+
+
+
+
+
 
