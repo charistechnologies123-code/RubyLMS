@@ -1,4 +1,4 @@
-import type { NextApiResponse } from "next";
+﻿import type { NextApiResponse } from "next";
 import { prisma } from "@/lib/prisma";
 import { createAuditLog } from "@/lib/audit";
 import { notifyUsers } from "@/lib/notifications";
@@ -93,72 +93,78 @@ async function handler(req: AuthedNextApiRequest, res: NextApiResponse) {
       return res.status(403).json({ error: "Forbidden" });
     }
 
-    const parsedQuestions = JSON.parse(questions) as QuestionPayload[];
+    try {
+      const parsedQuestions = JSON.parse(questions) as QuestionPayload[];
 
-    const quiz = await prisma.quiz.create({
-      data: {
-        courseId,
-        lessonId: lessonId || null,
-        title,
-        description: description || null,
-        instructions: instructions || null,
-        createdById: req.session.userId,
-        status: status ?? "DRAFT",
-        timeLimitMinutes: Number(timeLimitMinutes),
-        maxAttempts: maxAttempts ? Number(maxAttempts) : 1,
-        dueAt: dueAt ? new Date(dueAt) : null,
-        shuffleQuestions: shuffleQuestions !== "false",
-        shuffleOptions: shuffleOptions === "true",
-        showScoreImmediately: showScoreImmediately !== "false",
-        quizQuestions: {
-          create: parsedQuestions.map((question, index) => ({
-            order: index + 1,
-            questionBank: {
-              create: {
-                courseId,
-                questionText: question.questionText,
-                questionType: question.questionType,
-                explanation: question.explanation || null,
-                marks: question.marks ?? 1,
-                questionData: {
+      const quiz = await prisma.quiz.create({
+        data: {
+          courseId,
+          lessonId: lessonId || null,
+          title,
+          description: description || null,
+          instructions: instructions || null,
+          createdById: req.session.userId,
+          status: status ?? "DRAFT",
+          timeLimitMinutes: Number(timeLimitMinutes),
+          maxAttempts: maxAttempts ? Number(maxAttempts) : 1,
+          dueAt: dueAt ? new Date(dueAt) : null,
+          shuffleQuestions: shuffleQuestions !== "false",
+          shuffleOptions: shuffleOptions === "true",
+          showScoreImmediately: showScoreImmediately !== "false",
+          quizQuestions: {
+            create: parsedQuestions.map((question, index) => ({
+              order: index + 1,
+              questionBank: {
+                create: {
+                  courseId,
                   questionText: question.questionText,
                   questionType: question.questionType,
                   explanation: question.explanation || null,
-                  answerText: question.answerText || "",
-                  options: question.options ?? [],
-                  matchingPairs: question.matchingPairs ?? [],
-                },
-                options: {
-                  create: (question.options ?? []).map((option, optionIndex) => ({
-                    optionText: option.optionText,
-                    isCorrect: option.isCorrect,
-                    order: optionIndex + 1,
-                  })),
+                  marks: question.marks ?? 1,
+                  questionData: {
+                    questionText: question.questionText,
+                    questionType: question.questionType,
+                    explanation: question.explanation || null,
+                    answerText: question.answerText || "",
+                    options: question.options ?? [],
+                    matchingPairs: question.matchingPairs ?? [],
+                  },
+                  options: {
+                    create: (question.options ?? []).map((option, optionIndex) => ({
+                      optionText: option.optionText,
+                      isCorrect: option.isCorrect,
+                      order: optionIndex + 1,
+                    })),
+                  },
                 },
               },
-            },
-          })),
+            })),
+          },
         },
-      },
-    });
+      });
 
-    if (quiz.status === "PUBLISHED") {
-      await notifyUsers(
-        course.enrollments.map((enrollment) => enrollment.studentId),
-        "New quiz available",
-        `${quiz.title} is now available in ${course.title}.`,
-      );
+      if (quiz.status === "PUBLISHED") {
+        await notifyUsers(
+          course.enrollments.map((enrollment) => enrollment.studentId),
+          "New quiz available",
+          `${quiz.title} is now available in ${course.title}.`,
+        );
+      }
+
+      await createAuditLog({
+        actorId: req.session.userId,
+        action: "QUIZ_CREATED",
+        targetType: "Quiz",
+        targetId: quiz.id,
+        details: `Created quiz ${quiz.title}`,
+      });
+
+      return res.status(201).json({ quiz });
+    } catch (error) {
+      console.error("Failed to create quiz:", error);
+      const message = error instanceof Error ? error.message : "Failed to create quiz.";
+      return res.status(500).json({ error: message });
     }
-
-    await createAuditLog({
-      actorId: req.session.userId,
-      action: "QUIZ_CREATED",
-      targetType: "Quiz",
-      targetId: quiz.id,
-      details: `Created quiz ${quiz.title}`,
-    });
-
-    return res.status(201).json({ quiz });
   }
 
   return res.status(405).json({ error: "Method not allowed" });
