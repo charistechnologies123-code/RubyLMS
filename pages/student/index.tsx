@@ -128,12 +128,7 @@ export default function StudentDashboard({
                   >
                     Open course
                   </Link>
-                  <Link
-                    href={`/courses/${enrollment.course.id}/live-classes`}
-                    className="rounded-2xl border border-[#e8ddff] bg-white px-4 py-3 text-sm font-semibold text-slate-700"
-                  >
-                    Live classes
-                  </Link>
+
                 </div>
               </div>
             ))}
@@ -226,6 +221,7 @@ export default function StudentDashboard({
     </DashboardLayout>
   );
 }
+
 
 
 
