@@ -14,6 +14,7 @@ import FormField from "@/components/ui/FormField";
 import ImageUploadField from "@/components/ui/ImageUploadField";
 import MarkAnnouncementReadButton from "@/components/ui/MarkAnnouncementReadButton";
 import Panel from "@/components/ui/Panel";
+import WeekdayCheckboxGroup from "@/components/ui/WeekdayCheckboxGroup";
 
 import { calculateCourseProgress } from "@/lib/courseProgress";
 import { getManagedCourseWhere } from "@/lib/courseManagers";
@@ -345,6 +346,8 @@ export default function CourseWorkspacePage({
               ["Overview", "#overview"],
               ["Modules", "#lessons"],
               ["Live Classes", `/courses/${course.id}/live-classes`],
+              ["Attendance", `/courses/${course.id}/attendance`],
+              ...(session.role === "INSTRUCTOR" ? [] : [["Polls", `/courses/${course.id}/polls`]]),
               ["Resources", "#resources"],
               ["Announcements", "#announcements"],
               ["Q&A", "#qa"],
@@ -455,6 +458,7 @@ export default function CourseWorkspacePage({
                           { label: "Archived", value: "ARCHIVED" },
                         ]}
                       />
+                      <WeekdayCheckboxGroup name="attendanceDays" defaultValues={course.attendanceDays} />
                       {session.role === "ADMIN" && (
                         <>
                           <FormField
@@ -498,6 +502,7 @@ export default function CourseWorkspacePage({
                         previewClassName="h-24 w-40 rounded-[20px]"
                       />
                       <FormField label="Description" name="description" as="textarea" defaultValue={course.description} required />
+                      <WeekdayCheckboxGroup name="attendanceDays" defaultValues={course.attendanceDays} />
                     </ApiForm>
                   </div>
                 ) : null}

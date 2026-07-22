@@ -2,6 +2,7 @@ import type { NextApiResponse } from "next";
 import { prisma } from "@/lib/prisma";
 import { createAuditLog } from "@/lib/audit";
 import { normalizeImageInput } from "@/lib/media";
+import { normalizeAttendanceDays } from "@/lib/attendance";
 import { withApiAuth, type AuthedNextApiRequest } from "@/lib/api";
 import { normalizeManagerIds } from "@/lib/courseManagers";
 import { getVisibleCourseWhere } from "@/lib/lms";
@@ -59,13 +60,14 @@ async function handler(req: AuthedNextApiRequest, res: NextApiResponse) {
       return res.status(403).json({ error: "Only admins and instructors can create courses." });
     }
 
-    const { title, description, thumbnailUrl, status, instructorId, managerIds } = req.body as {
+    const { title, description, thumbnailUrl, status, instructorId, managerIds, attendanceDays } = req.body as {
       title?: string;
       description?: string;
       thumbnailUrl?: string;
       status?: "DRAFT" | "PUBLISHED" | "ARCHIVED";
       instructorId?: string;
       managerIds?: string | string[];
+      attendanceDays?: string | string[];
     };
 
     if (!title || !description) {
@@ -111,6 +113,7 @@ async function handler(req: AuthedNextApiRequest, res: NextApiResponse) {
                 })),
               }
             : undefined,
+        attendanceDays: normalizeAttendanceDays(attendanceDays),
       },
       include: {
         instructor: {

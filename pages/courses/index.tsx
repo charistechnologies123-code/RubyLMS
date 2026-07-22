@@ -9,6 +9,7 @@ import EmptyState from "@/components/ui/EmptyState";
 import FormField from "@/components/ui/FormField";
 import ImageUploadField from "@/components/ui/ImageUploadField";
 import Panel from "@/components/ui/Panel";
+import WeekdayCheckboxGroup from "@/components/ui/WeekdayCheckboxGroup";
 import { getVisibleCourseWhere } from "@/lib/lms";
 import { requirePageAuth } from "@/lib/pageAuth";
 import { prisma } from "@/lib/prisma";
@@ -26,6 +27,7 @@ export async function getServerSideProps(ctx: GetServerSidePropsContext) {
         thumbnailUrl: true,
         status: true,
         createdAt: true,
+        attendanceDays: true,
         instructor: {
           select: { id: true, fullName: true },
         },
@@ -151,6 +153,7 @@ export default function CoursesDirectoryPage({
                         { label: "Published", value: "PUBLISHED" },
                       ]}
                     />
+                      <WeekdayCheckboxGroup name="attendanceDays" />
                       {session.role === "ADMIN" && (
                         <>
                           <FormField
@@ -316,6 +319,7 @@ export default function CoursesDirectoryPage({
                               { label: "Archived", value: "ARCHIVED" },
                             ]}
                           />
+                          <WeekdayCheckboxGroup name="attendanceDays" defaultValues={course.attendanceDays} />
                           {session.role === "ADMIN" ? (
                             <>
                               <FormField

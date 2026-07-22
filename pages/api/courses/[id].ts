@@ -5,6 +5,7 @@ import { normalizeImageInput } from "@/lib/media";
 import { withApiAuth, type AuthedNextApiRequest } from "@/lib/api";
 import { normalizeManagerIds } from "@/lib/courseManagers";
 import { canManageCourse } from "@/lib/permissions";
+import { normalizeAttendanceDays } from "@/lib/attendance";
 
 async function handler(req: AuthedNextApiRequest, res: NextApiResponse) {
   const courseId = String(req.query.id);
@@ -80,13 +81,14 @@ async function handler(req: AuthedNextApiRequest, res: NextApiResponse) {
     return res.status(405).json({ error: "Method not allowed" });
   }
 
-  const { title, description, thumbnailUrl, status, instructorId, managerIds } = req.body as {
+  const { title, description, thumbnailUrl, status, instructorId, managerIds, attendanceDays } = req.body as {
     title?: string;
     description?: string;
     thumbnailUrl?: string;
     status?: "DRAFT" | "PUBLISHED" | "ARCHIVED";
     instructorId?: string;
     managerIds?: string | string[];
+    attendanceDays?: string | string[];
   };
 
   let normalizedThumbnailUrl: string | null | undefined;
@@ -127,6 +129,7 @@ async function handler(req: AuthedNextApiRequest, res: NextApiResponse) {
               })),
             }
           : undefined,
+      attendanceDays: normalizeAttendanceDays(attendanceDays),
     },
   });
 

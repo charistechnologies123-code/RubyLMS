@@ -7,7 +7,7 @@ import { useConfirmDialog } from "@/components/ui/ConfirmDialogProvider";
 
 type ApiActionButtonProps = {
   action: string;
-  method?: "PATCH" | "DELETE";
+  method?: "POST" | "PATCH" | "DELETE";
   payload?: Record<string, unknown>;
   successMessage: string;
   label: string;

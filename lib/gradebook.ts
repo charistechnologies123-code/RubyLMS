@@ -225,6 +225,7 @@ export async function createGradebookColumn(args: {
   type?: "CUSTOM" | "ATTENDANCE" | "QUIZ" | "ASSIGNMENT";
   maxScore?: number | null;
   createdById?: string | null;
+  sourceId?: string | null;
 }) {
   const existingColumns = await prisma.gradebookColumn.findMany({
     where: { courseId: args.courseId },
@@ -248,6 +249,7 @@ export async function createGradebookColumn(args: {
       title: args.title,
       key,
       type: args.type ?? "CUSTOM",
+      sourceId: args.sourceId ?? null,
       order,
       maxScore: typeof args.maxScore === "number" ? args.maxScore : null,
     },

@@ -49,6 +49,13 @@ enum QuizStatus {
   PUBLISHED
 }
 
+enum PollStatus {
+  DRAFT
+  OPEN
+  CLOSED
+}
+
+
 enum AssignmentStatus {
   DRAFT
   PUBLISHED
@@ -115,6 +122,8 @@ model User {
   submissions         AssignmentSubmission[]
   quizCreated         Quiz[]                 @relation("QuizCreatedBy")
   quizAttempts        QuizAttempt[]
+  pollVotes           PollVote[]
+  attendanceRecords   AttendanceRecord[]
   announcements       Announcement[]         @relation("AnnouncementCreatedBy")
   announcementReads   AnnouncementRead[]
   questionsAsked      CourseQuestion[]       @relation("CourseQuestionAskedBy")
@@ -127,6 +136,9 @@ model User {
   gradebookPublishes  GradebookPublication[] @relation("GradebookPublishedBy")
   chatRoomsCreated    ChatRoom[]             @relation("ChatRoomCreatedBy")
   liveClassesCreated  LiveClass[]            @relation("LiveClassCreatedBy")
+  pollsCreated        Poll[]                 @relation("PollCreatedBy")
+  attendanceSessionsCreated AttendanceSession[] @relation("AttendanceSessionCreatedBy")
+  attendanceRecordsCreated  AttendanceRecord[]  @relation("AttendanceRecordCreatedBy")
   chatMemberships     ChatMember[]
   chatMessagesSent    ChatMessage[]          @relation("ChatMessageSender")
   notifications       Notification[]
@@ -140,6 +152,7 @@ model Course {
   description   String
   thumbnailUrl  String?
   status        CourseStatus @default(DRAFT)
+  attendanceDays String[]    @default([])
   createdAt     DateTime     @default(now())
   updatedAt     DateTime     @updatedAt
 
@@ -163,6 +176,8 @@ model Course {
   gradebookCells   GradebookCell[]
   gradebookPublication GradebookPublication?
   liveClasses       LiveClass[]
+  polls            Poll[]
+  attendanceSessions AttendanceSession[]
 }
 
 model LiveClass {
@@ -185,6 +200,104 @@ model LiveClass {
 
   @@index([courseId, startsAt])
   @@index([createdById, startsAt])
+}
+
+model Poll {
+  id          String      @id @default(cuid())
+  title       String
+  description String?
+  status      PollStatus  @default(DRAFT)
+  closesAt    DateTime?
+  createdAt   DateTime    @default(now())
+  updatedAt   DateTime    @updatedAt
+
+  courseId    String
+  createdById String
+
+  course      Course      @relation(fields: [courseId], references: [id], onDelete: Cascade)
+  createdBy   User        @relation("PollCreatedBy", fields: [createdById], references: [id], onDelete: Restrict)
+  options     PollOption[]
+  votes       PollVote[]
+
+  @@index([courseId, status])
+  @@index([createdById, createdAt])
+}
+
+model PollOption {
+  id         String    @id @default(cuid())
+  label      String
+  slotsTotal Int
+  slotsTaken Int       @default(0)
+  order      Int
+  createdAt  DateTime  @default(now())
+  updatedAt  DateTime  @updatedAt
+
+  pollId     String
+  poll       Poll      @relation(fields: [pollId], references: [id], onDelete: Cascade)
+  votes      PollVote[]
+
+  @@unique([pollId, order])
+  @@index([pollId])
+}
+
+model PollVote {
+  id          String    @id @default(cuid())
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  pollId      String
+  optionId    String
+  studentId   String
+
+  poll        Poll      @relation(fields: [pollId], references: [id], onDelete: Cascade)
+  option      PollOption @relation(fields: [optionId], references: [id], onDelete: Cascade)
+  student     User      @relation(fields: [studentId], references: [id], onDelete: Cascade)
+
+  @@unique([pollId, studentId])
+  @@index([pollId])
+  @@index([studentId])
+}
+
+model AttendanceSession {
+  id          String    @id @default(cuid())
+  title       String
+  sessionDate DateTime
+  startsAt    DateTime?
+  endsAt      DateTime?
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  courseId    String
+  createdById String
+
+  course      Course    @relation(fields: [courseId], references: [id], onDelete: Cascade)
+  createdBy   User      @relation("AttendanceSessionCreatedBy", fields: [createdById], references: [id], onDelete: Restrict)
+  records     AttendanceRecord[]
+
+  @@unique([courseId, sessionDate])
+  @@index([courseId, sessionDate])
+  @@index([createdById, createdAt])
+}
+
+model AttendanceRecord {
+  id           String    @id @default(cuid())
+  clockInAt    DateTime?
+  clockOutAt   DateTime?
+  notes        String?
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+
+  sessionId    String
+  studentId    String
+  recordedById String
+
+  session      AttendanceSession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+  student      User      @relation(fields: [studentId], references: [id], onDelete: Cascade)
+  recordedBy   User      @relation("AttendanceRecordCreatedBy", fields: [recordedById], references: [id], onDelete: Restrict)
+
+  @@unique([sessionId, studentId])
+  @@index([studentId])
+  @@index([recordedById, createdAt])
 }
 
 model Enrollment {
