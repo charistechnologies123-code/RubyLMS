@@ -72,6 +72,21 @@ export async function getServerSideProps(ctx: GetServerSidePropsContext) {
           },
           options: {
             orderBy: { order: "asc" },
+            include: {
+              votes: session.role === "ADMIN"
+                ? {
+                    include: {
+                      student: {
+                        select: {
+                          id: true,
+                          fullName: true,
+                          studentId: true,
+                        },
+                      },
+                    },
+                  }
+                : false,
+            },
           },
           votes: session.role === "STUDENT" ? { where: { studentId: session.userId } } : true,
         },
@@ -98,7 +113,19 @@ export async function getServerSideProps(ctx: GetServerSidePropsContext) {
 
 export default function CoursePollsPage({ session, course }: InferGetServerSidePropsType<typeof getServerSideProps>) {
   const canManage = session.role === "ADMIN";
-  const [optionRows, setOptionRows] = useState([1, 2]);
+  const [createOptionRows, setCreateOptionRows] = useState([1, 2]);
+  const [editingPollId, setEditingPollId] = useState<string | null>(null);
+  const [editingOptionRows, setEditingOptionRows] = useState(0);
+
+  function startEditingPoll(poll: any) {
+    setEditingPollId(poll.id);
+    setEditingOptionRows(Math.max(2, poll.options.length));
+  }
+
+  function stopEditingPoll() {
+    setEditingPollId(null);
+    setEditingOptionRows(0);
+  }
 
   return (
     <DashboardLayout
@@ -136,18 +163,26 @@ export default function CoursePollsPage({ session, course }: InferGetServerSideP
                       {poll.options.map((option: any) => {
                         const selected = selectedOptionId === option.id;
                         const slotsLeft = Math.max(option.slotsTotal - option.slotsTaken, 0);
+                        const voterNames = canManage
+                          ? option.votes?.map((vote: any) => vote.student.fullName).filter(Boolean) ?? []
+                          : [];
 
                         return (
                           <div
                             key={option.id}
                             className={`rounded-[20px] border p-4 ${selected ? "border-[#6b00ff] bg-[#f7f1ff]" : "border-[#efe6ff] bg-white"}`}
                           >
-                            <div className="flex flex-wrap items-center justify-between gap-3">
+                            <div className="flex flex-wrap items-start justify-between gap-3">
                               <div>
                                 <p className="font-semibold text-slate-950">{option.label}</p>
                                 <p className="mt-1 text-xs uppercase tracking-[0.18em] text-slate-500">
                                   {slotsLeft} slot{slotsLeft === 1 ? "" : "s"} left
                                 </p>
+                                {canManage ? (
+                                  <p className="mt-2 text-sm text-slate-600">
+                                    {voterNames.length ? `Chosen by ${voterNames.join(", ")}` : "No one has chosen this option yet."}
+                                  </p>
+                                ) : null}
                               </div>
                               <div className="flex flex-wrap items-center gap-2">
                                 <Badge tone="slate">
@@ -163,6 +198,23 @@ export default function CoursePollsPage({ session, course }: InferGetServerSideP
 
                     {canManage ? (
                       <div className="mt-4 flex flex-wrap gap-3">
+                        <button
+                          type="button"
+                          onClick={() => {
+                            if (editingPollId === poll.id) {
+                              stopEditingPoll();
+                              return;
+                            }
+                            startEditingPoll(poll);
+                          }}
+                          className={`inline-flex rounded-2xl px-5 py-3 text-sm font-semibold transition ${
+                            editingPollId === poll.id
+                              ? "bg-[linear-gradient(135deg,#6b00ff,#8c3cff)] text-white"
+                              : "border border-[#e8ddff] bg-white text-[#6b00ff]"
+                          }`}
+                        >
+                          {editingPollId === poll.id ? "Close edit" : "Edit poll"}
+                        </button>
                         <ApiActionButton
                           action={`/api/courses/${course.id}/polls/${poll.id}`}
                           method="PATCH"
@@ -215,6 +267,88 @@ export default function CoursePollsPage({ session, course }: InferGetServerSideP
                         )}
                       </div>
                     ) : null}
+
+                    {canManage && editingPollId === poll.id ? (
+                      <div className="mt-5 rounded-[24px] border border-[#e8ddff] bg-[#fcfaff] p-5">
+                        <p className="font-heading text-xl text-slate-950">Edit Poll</p>
+                        <ApiForm
+                          action={`/api/courses/${course.id}/polls/${poll.id}`}
+                          method="PATCH"
+                          submitLabel="Save changes"
+                          successMessage="Poll updated."
+                          className="mt-4 grid gap-4"
+                          onSuccess={stopEditingPoll}
+                          resetOnSuccess={false}
+                        >
+                          <FormField label="Poll title" name="title" defaultValue={poll.title} required placeholder="Choose your squad" />
+                          <FormField label="Description" name="description" as="textarea" rows={4} defaultValue={poll.description ?? ""} placeholder="Optional instructions or context." />
+                          <FormField
+                            label="Status"
+                            name="status"
+                            as="select"
+                            defaultValue={poll.status}
+                            options={[
+                              { label: "Open", value: "OPEN" },
+                              { label: "Draft", value: "DRAFT" },
+                              { label: "Closed", value: "CLOSED" },
+                            ]}
+                          />
+                          <FormField label="Closes at" name="closesAt" type="datetime-local" />
+                          <div className="space-y-3 rounded-[24px] border border-[#e8ddff] bg-white p-4">
+                            <div className="flex items-center justify-between gap-3">
+                              <p className="font-semibold text-slate-800">Poll options</p>
+                              <button
+                                type="button"
+                                onClick={() => setEditingOptionRows((current) => current + 1)}
+                                className="rounded-2xl border border-[#e8ddff] bg-white px-3 py-2 text-sm font-semibold text-[#6b00ff]"
+                              >
+                                Add option
+                              </button>
+                            </div>
+                            <div className="space-y-3">
+                              {Array.from({ length: editingOptionRows }).map((_, index) => {
+                                const option = poll.options[index];
+
+                                return (
+                                  <div key={`${poll.id}-${index}`} className="grid gap-3 rounded-[20px] border border-[#efe6ff] bg-[#fcfaff] p-4 md:grid-cols-[1fr_160px_auto] md:items-end">
+                                    <label className="block">
+                                      <span className="text-sm font-semibold text-slate-700">Option {index + 1}</span>
+                                      <input
+                                        name="optionLabels"
+                                        required
+                                        defaultValue={option?.label ?? ""}
+                                        placeholder="Squad A"
+                                        className="mt-2 w-full rounded-2xl border border-[#e8ddff] bg-white px-4 py-3 text-sm text-slate-900 outline-none transition placeholder:text-slate-400 focus:border-[#6b00ff] focus:ring-2 focus:ring-[#efe4ff]"
+                                      />
+                                    </label>
+                                    <label className="block">
+                                      <span className="text-sm font-semibold text-slate-700">Slots</span>
+                                      <input
+                                        name="slotCounts"
+                                        type="number"
+                                        min="1"
+                                        defaultValue={option?.slotsTotal ?? 1}
+                                        required
+                                        className="mt-2 w-full rounded-2xl border border-[#e8ddff] bg-white px-4 py-3 text-sm text-slate-900 outline-none transition placeholder:text-slate-400 focus:border-[#6b00ff] focus:ring-2 focus:ring-[#efe4ff]"
+                                      />
+                                    </label>
+                                    {editingOptionRows > 2 ? (
+                                      <button
+                                        type="button"
+                                        onClick={() => setEditingOptionRows((current) => Math.max(2, current - 1))}
+                                        className="rounded-2xl border border-[#ffd7d7] bg-[#fff5f5] px-3 py-3 text-sm font-semibold text-[#c62828]"
+                                      >
+                                        Remove
+                                      </button>
+                                    ) : null}
+                                  </div>
+                                );
+                              })}
+                            </div>
+                          </div>
+                        </ApiForm>
+                      </div>
+                    ) : null}
                   </article>
                 );
               })
@@ -246,14 +380,14 @@ export default function CoursePollsPage({ session, course }: InferGetServerSideP
                   <p className="font-semibold text-slate-800">Poll options</p>
                   <button
                     type="button"
-                    onClick={() => setOptionRows((current) => [...current, Math.max(...current) + 1])}
+                    onClick={() => setCreateOptionRows((current) => [...current, Math.max(...current) + 1])}
                     className="rounded-2xl border border-[#e8ddff] bg-white px-3 py-2 text-sm font-semibold text-[#6b00ff]"
                   >
                     Add option
                   </button>
                 </div>
                 <div className="space-y-3">
-                  {optionRows.map((rowNumber, index) => (
+                  {createOptionRows.map((rowNumber, index) => (
                     <div key={rowNumber} className="grid gap-3 rounded-[20px] border border-[#efe6ff] bg-white p-4 md:grid-cols-[1fr_160px_auto] md:items-end">
                       <label className="block">
                         <span className="text-sm font-semibold text-slate-700">Option {index + 1}</span>
@@ -275,10 +409,10 @@ export default function CoursePollsPage({ session, course }: InferGetServerSideP
                           className="mt-2 w-full rounded-2xl border border-[#e8ddff] bg-white px-4 py-3 text-sm text-slate-900 outline-none transition placeholder:text-slate-400 focus:border-[#6b00ff] focus:ring-2 focus:ring-[#efe4ff]"
                         />
                       </label>
-                      {optionRows.length > 2 ? (
+                      {createOptionRows.length > 2 ? (
                         <button
                           type="button"
-                          onClick={() => setOptionRows((current) => current.filter((value) => value !== rowNumber))}
+                          onClick={() => setCreateOptionRows((current) => current.filter((value) => value !== rowNumber))}
                           className="rounded-2xl border border-[#ffd7d7] bg-[#fff5f5] px-3 py-3 text-sm font-semibold text-[#c62828]"
                         >
                           Remove

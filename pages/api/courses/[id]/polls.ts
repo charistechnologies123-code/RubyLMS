@@ -1,18 +1,11 @@
 import type { NextApiResponse } from "next";
-import { Prisma } from "@prisma/client";
 import { createAuditLog } from "@/lib/audit";
 import { prisma } from "@/lib/prisma";
 import { withApiAuth, type AuthedNextApiRequest } from "@/lib/api";
 
 function normalizeList(value: string | string[] | undefined) {
-  if (Array.isArray(value)) {
-    return value;
-  }
-
-  if (typeof value === "string") {
-    return [value];
-  }
-
+  if (Array.isArray(value)) return value;
+  if (typeof value === "string") return [value];
   return [];
 }
 
@@ -66,6 +59,21 @@ async function handler(req: AuthedNextApiRequest, res: NextApiResponse) {
         },
         options: {
           orderBy: { order: "asc" },
+          include: {
+            votes: req.session.role === "ADMIN"
+              ? {
+                  include: {
+                    student: {
+                      select: {
+                        id: true,
+                        fullName: true,
+                        studentId: true,
+                      },
+                    },
+                  },
+                }
+              : false,
+          },
         },
         votes: req.session.role === "STUDENT" ? { where: { studentId: req.session.userId } } : true,
       },
@@ -89,7 +97,9 @@ async function handler(req: AuthedNextApiRequest, res: NextApiResponse) {
     };
 
     const labels = normalizeList(optionLabels).map((value) => value.trim()).filter(Boolean);
-    const slots = normalizeList(slotCounts).map((value) => Number(value)).filter((value) => Number.isFinite(value) && value > 0);
+    const slots = normalizeList(slotCounts)
+      .map((value) => Number(value))
+      .filter((value) => Number.isFinite(value) && value > 0);
 
     if (!title?.trim()) {
       return res.status(400).json({ error: "Poll title is required." });
@@ -115,9 +125,7 @@ async function handler(req: AuthedNextApiRequest, res: NextApiResponse) {
           })),
         },
       },
-      include: {
-        options: true,
-      },
+      include: { options: true },
     });
 
     await createAuditLog({
