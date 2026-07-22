@@ -296,8 +296,8 @@ export default function CoursesDirectoryPage({
 
                 {canManage && expandedCourseId === course.id ? (
                   <div className="grid gap-6 rounded-[24px] border border-[#e8ddff] bg-[#fcfaff] p-5">
-                    <div className="grid gap-6 lg:grid-cols-2">
-                      <div className="space-y-4">
+                    <div className="grid gap-6 xl:grid-cols-2">
+                      <div className="min-w-0 space-y-4">
                         <p className="font-heading text-lg text-slate-950">Edit Course</p>
                         <ApiForm
                           action={`/api/courses/${course.id}`}
@@ -386,7 +386,7 @@ export default function CoursesDirectoryPage({
                         </p>
                       </div>
 
-                      <div className="space-y-4">
+                      <div className="min-w-0 space-y-4">
                         <p className="font-heading text-lg text-slate-950">Enroll Students</p>
                         <ApiForm
                           action="/api/enrollments"
