@@ -385,32 +385,6 @@ export default function CoursesDirectoryPage({
                           Permanent deletion is only available from Admin Archives after a course has been archived.
                         </p>
                       </div>
-
-                      <div className="min-w-0 space-y-4 2xl:self-start">
-                        <p className="font-heading text-lg text-slate-950">Enroll Students</p>
-                        <ApiForm
-                          action="/api/enrollments"
-                          submitLabel="Enroll learner"
-                          successMessage="Learner enrolled."
-                          className="grid gap-4"
-                        >
-                          <input type="hidden" name="courseId" value={course.id} />
-                          <FormField
-                            label="Student"
-                            name="studentId"
-                            as="select"
-                            options={students.map((student) => ({
-                              label: `${student.fullName}${student.studentId ? ` (${student.studentId})` : ""}`,
-                              value: student.id,
-                            }))}
-                            required
-                            disabled={!students.length}
-                          />
-                        </ApiForm>
-                        {!students.length ? (
-                          <p className="text-sm text-slate-600">No active students available to enroll.</p>
-                        ) : null}
-                      </div>
                     </div>
 
                     <div className="grid gap-6 lg:grid-cols-[1.1fr_0.9fr]">

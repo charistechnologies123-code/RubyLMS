@@ -69,8 +69,8 @@ export default function StudentsPage({
       <Panel title="Enroll Student" subtitle="Only admins and instructors can place students into courses." className="mb-6">
         <ApiForm
           action="/api/enrollments"
-          submitLabel="Enroll student"
-          successMessage="Student enrolled."
+          submitLabel="Enroll selected students"
+          successMessage="Students enrolled."
           className="grid gap-4 md:grid-cols-2"
         >
           <FormField
@@ -80,16 +80,22 @@ export default function StudentsPage({
             options={courses.map((course) => ({ label: course.title, value: course.id }))}
             required
           />
-          <FormField
-            label="Student"
-            name="studentId"
-            as="select"
-            options={students.map((student) => ({
-              label: `${student.fullName} (${student.studentId ?? "No ID"})`,
-              value: student.id,
-            }))}
-            required
-          />
+          <label className="block md:col-span-2">
+            <span className="text-sm font-semibold text-slate-700">Students</span>
+            <p className="mt-1 text-xs text-slate-500">Select one or more students to enroll in the chosen course.</p>
+            <div className="mt-2 grid gap-2 rounded-[20px] border border-[#e8ddff] bg-white p-4 sm:grid-cols-2 lg:grid-cols-3">
+              {students.length ? (
+                students.map((student) => (
+                  <label key={student.id} className="flex items-start gap-3 text-sm text-slate-700">
+                    <input type="checkbox" name="studentIds" value={student.id} className="mt-1" />
+                    <span>{student.fullName} ({student.studentId ?? "No ID"})</span>
+                  </label>
+                ))
+              ) : (
+                <p className="text-sm text-slate-600">No active students available.</p>
+              )}
+            </div>
+          </label>
         </ApiForm>
       </Panel>
 

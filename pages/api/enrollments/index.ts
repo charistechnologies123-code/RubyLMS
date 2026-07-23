@@ -14,9 +14,10 @@ async function handler(req: AuthedNextApiRequest, res: NextApiResponse) {
     return res.status(403).json({ error: "Forbidden" });
   }
 
-  const { courseId, studentId, enrollmentId } = req.body as {
+  const { courseId, studentId, studentIds, enrollmentId } = req.body as {
     courseId?: string;
     studentId?: string;
+    studentIds?: string | string[];
     enrollmentId?: string;
   };
 
@@ -51,8 +52,18 @@ async function handler(req: AuthedNextApiRequest, res: NextApiResponse) {
     return res.status(200).json({ success: true });
   }
 
-  if (!courseId || !studentId) {
-    return res.status(400).json({ error: "courseId and studentId are required." });
+  const selectedStudentIds = Array.isArray(studentIds)
+    ? studentIds
+    : typeof studentIds === "string"
+      ? [studentIds]
+      : typeof studentId === "string"
+        ? [studentId]
+        : [];
+
+  const uniqueStudentIds = [...new Set(selectedStudentIds.map((value) => value.trim()).filter(Boolean))];
+
+  if (!courseId || !uniqueStudentIds.length) {
+    return res.status(400).json({ error: "courseId and at least one student are required." });
   }
 
   const course = await prisma.course.findUnique({ where: { id: courseId } });
@@ -75,24 +86,45 @@ async function handler(req: AuthedNextApiRequest, res: NextApiResponse) {
     return res.status(403).json({ error: "Forbidden" });
   }
 
-  const enrollment = await prisma.enrollment.create({
-    data: {
+  const existingEnrollments = await prisma.enrollment.findMany({
+    where: {
       courseId,
-      studentId,
+      studentId: { in: uniqueStudentIds },
     },
+    select: { studentId: true },
   });
 
-  await notifyUsers([studentId], "Enrollment confirmed", `You have been added to ${course.title}.`);
+  const existingStudentIds = new Set(existingEnrollments.map((enrollment) => enrollment.studentId));
+  const studentIdsToCreate = uniqueStudentIds.filter((value) => !existingStudentIds.has(value));
+
+  if (!studentIdsToCreate.length) {
+    return res.status(200).json({ enrollments: [], skipped: uniqueStudentIds.length });
+  }
+
+  const enrollments = await prisma.$transaction(
+    studentIdsToCreate.map((studentId) =>
+      prisma.enrollment.create({
+        data: {
+          courseId,
+          studentId,
+        },
+      }),
+    ),
+  );
+
+  await Promise.all(
+    studentIdsToCreate.map((studentId) => notifyUsers([studentId], "Enrollment confirmed", `You have been added to ${course.title}.`)),
+  );
 
   await createAuditLog({
     actorId: req.session.userId,
     action: "ENROLLMENT_CREATED",
     targetType: "Enrollment",
-    targetId: enrollment.id,
-    details: `Enrolled ${studentId} in ${course.title}`,
+    targetId: enrollments[0]?.id ?? course.id,
+    details: `Enrolled ${studentIdsToCreate.length} student(s) in ${course.title}`,
   });
 
-  return res.status(201).json({ enrollment });
+  return res.status(201).json({ enrollments, skipped: uniqueStudentIds.length - studentIdsToCreate.length });
 }
 
 export default withApiAuth(handler, ["ADMIN", "INSTRUCTOR"]);
