@@ -7,6 +7,8 @@ import { normalizeManagerIds } from "@/lib/courseManagers";
 import { canManageCourse } from "@/lib/permissions";
 import { normalizeAttendanceDays } from "@/lib/attendance";
 import { ensureCourseAttendanceSessions } from "@/lib/attendanceSessions";
+import { parseCourseDate, parseCourseDurationWeeks, validateCourseSchedule } from "@/lib/courseSchedule";
+import { syncCourseAttendanceGradebook } from "@/lib/gradebook";
 
 async function handler(req: AuthedNextApiRequest, res: NextApiResponse) {
   const courseId = String(req.query.id);
@@ -82,7 +84,18 @@ async function handler(req: AuthedNextApiRequest, res: NextApiResponse) {
     return res.status(405).json({ error: "Method not allowed" });
   }
 
-  const { title, description, thumbnailUrl, status, instructorId, managerIds, attendanceDays } = req.body as {
+  const {
+    title,
+    description,
+    thumbnailUrl,
+    status,
+    instructorId,
+    managerIds,
+    attendanceDays,
+    startDate,
+    endDate,
+    durationWeeks,
+  } = req.body as {
     title?: string;
     description?: string;
     thumbnailUrl?: string;
@@ -90,6 +103,9 @@ async function handler(req: AuthedNextApiRequest, res: NextApiResponse) {
     instructorId?: string;
     managerIds?: string | string[];
     attendanceDays?: string | string[];
+    startDate?: string;
+    endDate?: string;
+    durationWeeks?: string | number;
   };
 
   let normalizedThumbnailUrl: string | null | undefined;
@@ -107,6 +123,35 @@ async function handler(req: AuthedNextApiRequest, res: NextApiResponse) {
   }
 
   const normalizedManagerIds = normalizeManagerIds(managerIds);
+
+  const hasScheduleInput = ["attendanceDays", "startDate", "endDate", "durationWeeks"].some((field) =>
+    Object.prototype.hasOwnProperty.call(req.body, field),
+  );
+  const nextAttendanceDays = Object.prototype.hasOwnProperty.call(req.body, "attendanceDays")
+    ? normalizeAttendanceDays(attendanceDays)
+    : normalizeAttendanceDays(course.attendanceDays);
+  const nextStartDate = Object.prototype.hasOwnProperty.call(req.body, "startDate")
+    ? parseCourseDate(startDate)
+    : course.startDate;
+  const nextEndDate = Object.prototype.hasOwnProperty.call(req.body, "endDate")
+    ? parseCourseDate(endDate)
+    : course.endDate;
+  const nextDurationWeeks = Object.prototype.hasOwnProperty.call(req.body, "durationWeeks")
+    ? parseCourseDurationWeeks(durationWeeks)
+    : course.durationWeeks;
+
+  if (hasScheduleInput) {
+    const scheduleError = validateCourseSchedule({
+      attendanceDays: nextAttendanceDays,
+      startDate: nextStartDate,
+      endDate: nextEndDate,
+      durationWeeks: nextDurationWeeks,
+    });
+
+    if (scheduleError) {
+      return res.status(400).json({ error: scheduleError });
+    }
+  }
 
   const updatedCourse = await prisma.course.update({
     where: { id: courseId },
@@ -130,16 +175,24 @@ async function handler(req: AuthedNextApiRequest, res: NextApiResponse) {
               })),
             }
           : undefined,
-      attendanceDays: normalizeAttendanceDays(attendanceDays),
+      attendanceDays: hasScheduleInput ? nextAttendanceDays : undefined,
+      startDate: hasScheduleInput ? nextStartDate : undefined,
+      endDate: hasScheduleInput ? nextEndDate : undefined,
+      durationWeeks: hasScheduleInput ? nextDurationWeeks : undefined,
     },
   });
 
-  await ensureCourseAttendanceSessions({
-    courseId: updatedCourse.id,
-    courseTitle: updatedCourse.title,
-    attendanceDays: normalizeAttendanceDays(updatedCourse.attendanceDays),
-    createdById: req.session.userId,
-  });
+  if (hasScheduleInput) {
+    await ensureCourseAttendanceSessions({
+      courseId: updatedCourse.id,
+      courseTitle: updatedCourse.title,
+      attendanceDays: normalizeAttendanceDays(updatedCourse.attendanceDays),
+      startDate: updatedCourse.startDate,
+      durationWeeks: updatedCourse.durationWeeks,
+      createdById: req.session.userId,
+    });
+    await syncCourseAttendanceGradebook(updatedCourse.id);
+  }
 
   await createAuditLog({
     actorId: req.session.userId,

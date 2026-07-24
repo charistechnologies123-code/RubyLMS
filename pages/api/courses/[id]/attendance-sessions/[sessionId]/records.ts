@@ -3,6 +3,7 @@ import { createAuditLog } from "@/lib/audit";
 import { prisma } from "@/lib/prisma";
 import { withApiAuth, type AuthedNextApiRequest } from "@/lib/api";
 import { getManagedCourseWhere } from "@/lib/courseManagers";
+import { syncCourseAttendanceGradebook } from "@/lib/gradebook";
 
 class AttendanceError extends Error {
   status: number;
@@ -99,19 +100,21 @@ async function handler(req: AuthedNextApiRequest, res: NextApiResponse) {
             },
           },
           update: {
-            score: updatedRecord.clockInAt ? 1 : 0,
+            score: updatedRecord.clockInAt && updatedRecord.clockOutAt ? 1 : 0,
           },
           create: {
             courseId,
             columnId: column.id,
             studentId,
-            score: updatedRecord.clockInAt ? 1 : 0,
+            score: updatedRecord.clockInAt && updatedRecord.clockOutAt ? 1 : 0,
           },
         });
       }
 
       return updatedRecord;
     });
+
+    await syncCourseAttendanceGradebook(courseId, studentId);
 
     await createAuditLog({
       actorId: req.session.userId,

@@ -128,6 +128,9 @@ export default function CourseAttendancePage({ session, course }: InferGetServer
         <Panel title="Attendance Overview" subtitle="Course meeting days and attendance sessions live here.">
           <div className="flex flex-wrap items-center gap-2">
             <Badge tone="slate">{course.enrollments.length} learners</Badge>
+            <Badge tone="slate">Starts {course.startDate ? formatDate(course.startDate) : "Not set"}</Badge>
+            <Badge tone="slate">Ends {course.endDate ? formatDate(course.endDate) : "Not set"}</Badge>
+            <Badge tone="green">{course.durationWeeks ? `${course.durationWeeks} weeks` : "Duration not set"}</Badge>
             {course.attendanceDays.length ? course.attendanceDays.map((day: string) => <Badge key={day} tone="purple">{day}</Badge>) : <Badge tone="slate">No scheduled weekdays set</Badge>}
           </div>
         </Panel>

@@ -4,6 +4,7 @@ import { createAuditLog } from "@/lib/audit";
 import { normalizeImageInput } from "@/lib/media";
 import { normalizeAttendanceDays } from "@/lib/attendance";
 import { ensureCourseAttendanceSessions } from "@/lib/attendanceSessions";
+import { parseCourseDate, parseCourseDurationWeeks, validateCourseSchedule } from "@/lib/courseSchedule";
 import { withApiAuth, type AuthedNextApiRequest } from "@/lib/api";
 import { normalizeManagerIds } from "@/lib/courseManagers";
 import { getVisibleCourseWhere } from "@/lib/lms";
@@ -61,7 +62,18 @@ async function handler(req: AuthedNextApiRequest, res: NextApiResponse) {
       return res.status(403).json({ error: "Only admins and instructors can create courses." });
     }
 
-    const { title, description, thumbnailUrl, status, instructorId, managerIds, attendanceDays } = req.body as {
+    const {
+      title,
+      description,
+      thumbnailUrl,
+      status,
+      instructorId,
+      managerIds,
+      attendanceDays,
+      startDate,
+      endDate,
+      durationWeeks,
+    } = req.body as {
       title?: string;
       description?: string;
       thumbnailUrl?: string;
@@ -69,6 +81,9 @@ async function handler(req: AuthedNextApiRequest, res: NextApiResponse) {
       instructorId?: string;
       managerIds?: string | string[];
       attendanceDays?: string | string[];
+      startDate?: string;
+      endDate?: string;
+      durationWeeks?: string | number;
     };
 
     if (!title || !description) {
@@ -86,6 +101,20 @@ async function handler(req: AuthedNextApiRequest, res: NextApiResponse) {
     }
 
     const normalizedManagerIds = normalizeManagerIds(managerIds);
+    const normalizedAttendanceDays = normalizeAttendanceDays(attendanceDays);
+    const parsedStartDate = parseCourseDate(startDate);
+    const parsedEndDate = parseCourseDate(endDate);
+    const parsedDurationWeeks = parseCourseDurationWeeks(durationWeeks);
+    const scheduleError = validateCourseSchedule({
+      attendanceDays: normalizedAttendanceDays,
+      startDate: parsedStartDate,
+      endDate: parsedEndDate,
+      durationWeeks: parsedDurationWeeks,
+    });
+
+    if (scheduleError) {
+      return res.status(400).json({ error: scheduleError });
+    }
 
     const slugBase = slugify(title);
     const slugCount = await prisma.course.count({
@@ -114,7 +143,10 @@ async function handler(req: AuthedNextApiRequest, res: NextApiResponse) {
                 })),
               }
             : undefined,
-        attendanceDays: normalizeAttendanceDays(attendanceDays),
+        attendanceDays: normalizedAttendanceDays,
+        startDate: parsedStartDate,
+        endDate: parsedEndDate,
+        durationWeeks: parsedDurationWeeks,
       },
       include: {
         instructor: {
@@ -129,6 +161,8 @@ async function handler(req: AuthedNextApiRequest, res: NextApiResponse) {
       courseId: course.id,
       courseTitle: course.title,
       attendanceDays: normalizeAttendanceDays(course.attendanceDays),
+      startDate: course.startDate,
+      durationWeeks: course.durationWeeks,
       createdById: req.session.userId,
     });
 

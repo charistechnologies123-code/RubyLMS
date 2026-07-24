@@ -32,44 +32,51 @@ export function weekdayFromDate(value: string | Date) {
   return WEEKDAY_OPTIONS[weekday]?.value ?? null;
 }
 
-export function getUpcomingAttendanceSessionDates(
+function lmsDateKey(value: Date) {
+  const parts = getLmsDateParts(value);
+  return `${parts.year}-${String(parts.month).padStart(2, "0")}-${String(parts.day).padStart(2, "0")}`;
+}
+
+function addDays(value: Date, days: number) {
+  return new Date(value.getTime() + days * 24 * 60 * 60 * 1000);
+}
+
+export function getCourseAttendanceSessionDates(
   attendanceDays: WeekdayValue[],
-  weeksAhead = 12,
-  startingFrom = new Date(),
+  startDate: Date,
+  durationWeeks: number,
 ) {
   const selectedDays = new Set(attendanceDays);
   const dates: Date[] = [];
-  const seen = new Set<string>();
-  const startDate = new Date(startingFrom);
-  startDate.setHours(0, 0, 0, 0);
+  const normalizedDuration = Math.max(0, Math.floor(durationWeeks));
+  const normalizedStartDate = parseLmsDateValue(lmsDateKey(startDate));
 
-  for (let weekOffset = 0; weekOffset < weeksAhead; weekOffset += 1) {
+  if (!selectedDays.size || !normalizedStartDate || !normalizedDuration) {
+    return dates;
+  }
+
+  for (const attendanceDay of attendanceDays) {
+    let firstOccurrence = normalizedStartDate;
+
     for (let dayOffset = 0; dayOffset < 7; dayOffset += 1) {
-      const candidate = new Date(startDate);
-      candidate.setDate(startDate.getDate() + weekOffset * 7 + dayOffset);
-
-      const weekday = weekdayFromDate(candidate);
-      if (!weekday || !selectedDays.has(weekday)) {
-        continue;
+      const candidate = addDays(normalizedStartDate, dayOffset);
+      if (weekdayFromDate(candidate) === attendanceDay) {
+        firstOccurrence = candidate;
+        break;
       }
+    }
 
-      const parts = getLmsDateParts(candidate);
-      const key = `${parts.year}-${String(parts.month).padStart(2, "0")}-${String(parts.day).padStart(2, "0")}`;
+    for (let weekOffset = 0; weekOffset < normalizedDuration; weekOffset += 1) {
+      const candidate = addDays(firstOccurrence, weekOffset * 7);
+      const sessionDate = parseLmsDateValue(lmsDateKey(candidate));
 
-      if (seen.has(key)) {
-        continue;
-      }
-
-      seen.add(key);
-
-      const sessionDate = parseLmsDateValue(key);
       if (sessionDate) {
         dates.push(sessionDate);
       }
     }
   }
 
-  return dates;
+  return dates.sort((left, right) => left.getTime() - right.getTime());
 }
 
 

@@ -1,5 +1,6 @@
 import type { GradebookColumnType } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
+import { getCourseAttendanceSessionDates, normalizeAttendanceDays } from "@/lib/attendance";
 
 type CsvImportRecord =
   | {
@@ -420,6 +421,137 @@ export async function importGradebookColumnFromAssignment(args: {
   });
 }
 
+
+export async function syncCourseAttendanceGradebook(courseId: string, studentId?: string) {
+  const [course, columns] = await Promise.all([
+    prisma.course.findUnique({
+      where: { id: courseId },
+      select: {
+        attendanceDays: true,
+        startDate: true,
+        durationWeeks: true,
+        enrollments: {
+          where: studentId ? { studentId } : undefined,
+          select: { studentId: true },
+        },
+      },
+    }),
+    prisma.gradebookColumn.findMany({
+      where: {
+        courseId,
+        type: "ATTENDANCE",
+        sourceId: courseId,
+      },
+      select: {
+        id: true,
+        maxScore: true,
+      },
+    }),
+  ]);
+
+  if (!course || !columns.length || !course.startDate || !course.durationWeeks) {
+    return;
+  }
+
+  const scheduledDates = getCourseAttendanceSessionDates(
+    normalizeAttendanceDays(course.attendanceDays),
+    course.startDate,
+    course.durationWeeks,
+  );
+  const totalScheduledDays = scheduledDates.length;
+  const studentIds = course.enrollments.map((enrollment) => enrollment.studentId);
+
+  if (!studentIds.length) {
+    return;
+  }
+
+  const records = totalScheduledDays
+    ? await prisma.attendanceRecord.findMany({
+        where: {
+          studentId: { in: studentIds },
+          clockInAt: { not: null },
+          clockOutAt: { not: null },
+          session: {
+            courseId,
+            sessionDate: { in: scheduledDates },
+          },
+        },
+        select: {
+          studentId: true,
+          sessionId: true,
+        },
+      })
+    : [];
+  const attendedSessionsByStudent = new Map<string, Set<string>>();
+
+  for (const record of records) {
+    const attendedSessions = attendedSessionsByStudent.get(record.studentId) ?? new Set<string>();
+    attendedSessions.add(record.sessionId);
+    attendedSessionsByStudent.set(record.studentId, attendedSessions);
+  }
+
+  await prisma.$transaction(async (tx) => {
+    for (const column of columns) {
+      for (const enrolledStudentId of studentIds) {
+        const attendedDays = attendedSessionsByStudent.get(enrolledStudentId)?.size ?? 0;
+        const score =
+          totalScheduledDays > 0 && hasPositiveScore(column.maxScore)
+            ? roundGradebookScore((attendedDays / totalScheduledDays) * column.maxScore)
+            : null;
+
+        await tx.gradebookCell.upsert({
+          where: {
+            columnId_studentId: {
+              columnId: column.id,
+              studentId: enrolledStudentId,
+            },
+          },
+          update: {
+            score,
+            notes: `${attendedDays} of ${totalScheduledDays} attendance days completed`,
+            selectedQuizAttemptId: null,
+            selectedAssignmentSubmissionId: null,
+          },
+          create: {
+            courseId,
+            columnId: column.id,
+            studentId: enrolledStudentId,
+            score,
+            notes: `${attendedDays} of ${totalScheduledDays} attendance days completed`,
+          },
+        });
+      }
+    }
+  });
+}
+
+export async function importGradebookColumnFromAttendance(args: {
+  courseId: string;
+  columnId: string;
+}) {
+  const column = await prisma.gradebookColumn.findFirst({
+    where: {
+      id: args.columnId,
+      courseId: args.courseId,
+      type: "ATTENDANCE",
+    },
+    select: {
+      id: true,
+      maxScore: true,
+    },
+  });
+
+  if (!column || !hasPositiveScore(column.maxScore)) {
+    throw new Error("Set a positive obtainable grade before importing attendance.");
+  }
+
+  await prisma.gradebookColumn.update({
+    where: { id: column.id },
+    data: { sourceId: args.courseId },
+  });
+
+  await syncCourseAttendanceGradebook(args.courseId);
+}
 export async function clearGradebookStudentScore(args: {
   courseId: string;
   columnId: string;

@@ -30,6 +30,19 @@ export function toLmsDateTimeLocalValue(value?: string | Date | null) {
   return shiftToLmsTime(date).toISOString().slice(0, 16);
 }
 
+export function toLmsDateInputValue(value?: string | Date | null) {
+  if (!value) {
+    return "";
+  }
+
+  const date = typeof value === "string" ? new Date(value) : value;
+  if (Number.isNaN(date.getTime())) {
+    return "";
+  }
+
+  return shiftToLmsTime(date).toISOString().slice(0, 10);
+}
+
 export function parseLmsDateTimeLocalValue(value?: string | null) {
   if (!value) {
     return null;

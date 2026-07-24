@@ -2,7 +2,12 @@ import type { NextApiResponse } from "next";
 import { prisma } from "@/lib/prisma";
 import { withApiAuth, type AuthedNextApiRequest } from "@/lib/api";
 import { getManagedCourseWhere } from "@/lib/courseManagers";
-import { importGradebookColumnFromAssignment, importGradebookColumnFromQuiz, syncCourseGradebook } from "@/lib/gradebook";
+import {
+  importGradebookColumnFromAssignment,
+  importGradebookColumnFromAttendance,
+  importGradebookColumnFromQuiz,
+  syncCourseGradebook,
+} from "@/lib/gradebook";
 
 async function handler(req: AuthedNextApiRequest, res: NextApiResponse) {
   if (req.method !== "PATCH") {
@@ -11,12 +16,12 @@ async function handler(req: AuthedNextApiRequest, res: NextApiResponse) {
 
   const columnId = String(req.query.columnId ?? "");
   const { importType, sourceId } = req.body as {
-    importType?: "QUIZ" | "ASSIGNMENT";
+    importType?: "QUIZ" | "ASSIGNMENT" | "ATTENDANCE";
     sourceId?: string;
   };
 
-  if (!columnId || !importType || !sourceId) {
-    return res.status(400).json({ error: "columnId, importType, and sourceId are required." });
+  if (!columnId || !importType || !["QUIZ", "ASSIGNMENT", "ATTENDANCE"].includes(importType) || (importType !== "ATTENDANCE" && !sourceId)) {
+    return res.status(400).json({ error: "A valid import type and source are required." });
   }
 
   const column = await prisma.gradebookColumn.findFirst({
@@ -32,6 +37,29 @@ async function handler(req: AuthedNextApiRequest, res: NextApiResponse) {
 
   await syncCourseGradebook(column.courseId);
 
+
+  if (importType === "ATTENDANCE") {
+    if (column.type !== "ATTENDANCE") {
+      return res.status(400).json({ error: "Attendance can only be imported into an attendance column." });
+    }
+
+    try {
+      await importGradebookColumnFromAttendance({
+        courseId: column.courseId,
+        columnId,
+      });
+    } catch (error) {
+      return res.status(400).json({
+        error: error instanceof Error ? error.message : "Unable to import attendance.",
+      });
+    }
+
+    return res.status(200).json({ success: true });
+  }
+
+  if (!sourceId) {
+    return res.status(400).json({ error: "A source is required." });
+  }
   if (importType === "QUIZ") {
     const quiz = await prisma.quiz.findFirst({
       where: {

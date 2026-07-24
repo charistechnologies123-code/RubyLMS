@@ -1,5 +1,4 @@
 import type { NextApiResponse } from "next";
-import { createGradebookColumn } from "@/lib/gradebook";
 import { createAuditLog } from "@/lib/audit";
 import { prisma } from "@/lib/prisma";
 import { withApiAuth, type AuthedNextApiRequest } from "@/lib/api";
@@ -100,6 +99,14 @@ async function handler(req: AuthedNextApiRequest, res: NextApiResponse) {
       return res.status(400).json({ error: "This date does not match the course attendance days." });
     }
 
+    if (course.startDate && sessionDateTime.getTime() < course.startDate.getTime()) {
+      return res.status(400).json({ error: "Attendance date cannot be before the course start date." });
+    }
+
+    if (course.endDate && sessionDateTime.getTime() > course.endDate.getTime()) {
+      return res.status(400).json({ error: "Attendance date cannot be after the course end date." });
+    }
+
     const attendanceSession = await prisma.attendanceSession.create({
       data: {
         courseId,
@@ -111,19 +118,6 @@ async function handler(req: AuthedNextApiRequest, res: NextApiResponse) {
       },
     });
 
-    const column = await createGradebookColumn({
-      courseId,
-      title: attendanceSession.title,
-      type: "ATTENDANCE",
-      sourceId: attendanceSession.id,
-      maxScore: 1,
-      createdById: req.session.userId,
-    });
-
-    await prisma.gradebookCell.updateMany({
-      where: { columnId: column.id },
-      data: { score: 0 },
-    });
 
     await createAuditLog({
       actorId: req.session.userId,

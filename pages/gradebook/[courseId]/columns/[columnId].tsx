@@ -150,6 +150,22 @@ export default function GradebookColumnPage({
           </div>
         </Panel>
 
+        {column.type === "ATTENDANCE" ? (
+          <Panel
+            title="Import Course Attendance"
+            subtitle="A student is present only when both clock-in and clock-out are recorded. The result is scaled to this column's obtainable grade."
+          >
+            <ApiForm
+              action={`/api/gradebook/columns/${column.id}/import`}
+              method="PATCH"
+              submitLabel="Import attendance scores"
+              successMessage="Attendance scores imported into this column."
+            >
+              <input type="hidden" name="importType" value="ATTENDANCE" />
+            </ApiForm>
+          </Panel>
+        ) : null}
+
         <div className="grid gap-6 lg:grid-cols-2">
           <Panel title="Import From Quiz" subtitle="Choose one quiz in this course and fill this entire column with the best submitted attempt for each student.">
             <ApiForm
