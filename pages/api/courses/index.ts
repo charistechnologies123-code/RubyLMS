@@ -3,6 +3,7 @@ import { prisma } from "@/lib/prisma";
 import { createAuditLog } from "@/lib/audit";
 import { normalizeImageInput } from "@/lib/media";
 import { normalizeAttendanceDays } from "@/lib/attendance";
+import { ensureCourseAttendanceSessions } from "@/lib/attendanceSessions";
 import { withApiAuth, type AuthedNextApiRequest } from "@/lib/api";
 import { normalizeManagerIds } from "@/lib/courseManagers";
 import { getVisibleCourseWhere } from "@/lib/lms";
@@ -124,6 +125,13 @@ async function handler(req: AuthedNextApiRequest, res: NextApiResponse) {
       },
     });
 
+    await ensureCourseAttendanceSessions({
+      courseId: course.id,
+      courseTitle: course.title,
+      attendanceDays: normalizeAttendanceDays(course.attendanceDays),
+      createdById: req.session.userId,
+    });
+
     await createAuditLog({
       actorId: req.session.userId,
       action: "COURSE_CREATED",
@@ -147,3 +155,7 @@ export const config = {
     },
   },
 };
+
+
+
+

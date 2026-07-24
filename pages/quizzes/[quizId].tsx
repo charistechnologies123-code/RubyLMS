@@ -1,4 +1,4 @@
-﻿import type { GetServerSidePropsContext, GetServerSidePropsResult } from "next";
+import type { GetServerSidePropsContext, GetServerSidePropsResult } from "next";
 import Link from "next/link";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/router";
@@ -12,7 +12,9 @@ import FormField from "@/components/ui/FormField";
 import Panel from "@/components/ui/Panel";
 import { assertRoleAccess, getDefaultRouteForRole, getSessionFromPageContext } from "@/lib/auth";
 import { formatDate } from "@/lib/format";
+import { formatQuizScore } from "@/lib/quizScoring";
 import { getManagedCourseWhere } from "@/lib/courseManagers";
+import { toLmsDateTimeLocalValue } from "@/lib/lmsTime";
 import { canStudentSubmitBeforeDueDate } from "@/lib/lms";
 import { canManageCourse } from "@/lib/permissions";
 import { prisma } from "@/lib/prisma";
@@ -88,7 +90,7 @@ type QuizPageProps = {
     score: number | null;
     isSubmitted: boolean;
   }>;
-  managerAttempts: Array<{
+      managerAttempts: Array<{
     id: string;
     attemptNumber: number;
     score: number | null;
@@ -98,6 +100,7 @@ type QuizPageProps = {
       fullName: string;
       studentId: string | null;
     };
+    answers?: Array<any>;
   }>;
 };
 
@@ -180,6 +183,28 @@ export async function getServerSideProps(
                     studentId: true,
                   },
                 },
+                answers: {
+                  include: {
+                    quizQuestion: {
+                      select: {
+                        id: true,
+                        order: true,
+                        questionBank: {
+                          select: {
+                            questionText: true,
+                            questionType: true,
+                            options: {
+                              select: {
+                                id: true,
+                                optionText: true,
+                              },
+                            },
+                          },
+                        },
+                      },
+                    },
+                  },
+                },
               },
             },
     },
@@ -254,7 +279,9 @@ export async function getServerSideProps(
       optionText: option.optionText,
       isCorrect: option.isCorrect,
     })),
-  }));  return {
+  }));
+
+  return {
     props: {
       session,
       canManage,
@@ -317,10 +344,12 @@ function QuizAttemptWorkspace({
   quiz,
   activeAttempt,
   pastAttempts,
+  quizTotalPoints,
 }: {
   quiz: QuizPageProps["quiz"];
   activeAttempt: QuizAttemptData;
   pastAttempts: QuizPageProps["pastAttempts"];
+  quizTotalPoints: number;
 }) {
   const router = useRouter();
   const { confirm } = useConfirmDialog();
@@ -628,7 +657,7 @@ function QuizAttemptWorkspace({
                     {attempt.isSubmitted ? "Submitted" : "In progress"}
                   </Badge>
                   <Badge tone="slate">
-                    {typeof attempt.score === "number" ? `${attempt.score} points` : "Awaiting score"}
+                    {typeof attempt.score === "number" ? `${formatQuizScore(attempt.score)} of ${formatQuizScore(quizTotalPoints)} points` : "Awaiting score"}
                   </Badge>
                 </div>
               </div>
@@ -648,9 +677,11 @@ export default function QuizDetailPage({
   activeAttempt,
   pastAttempts,
   managerAttempts,
+  initialQuestions,
 }: QuizPageProps) {
   const router = useRouter();
   const canEditQuiz = canManage && router.query.mode === "manage";
+  const quizTotalPoints = useMemo(() => initialQuestions.reduce((sum, question) => sum + Number(question.marks || 0), 0), [initialQuestions]);
 
   return (
     <DashboardLayout
@@ -712,7 +743,7 @@ export default function QuizDetailPage({
                 { label: "Published", value: "PUBLISHED" },
               ]}
             />
-            <FormField label="Due date" name="dueAt" type="datetime-local" defaultValue={quiz.dueAt ? quiz.dueAt.slice(0, 16) : ""} />
+            <FormField label="Due date" name="dueAt" type="datetime-local" defaultValue={toLmsDateTimeLocalValue(quiz.dueAt)} />
             <div className="md:col-span-2">
               <FormField label="Description" name="description" as="textarea" defaultValue={quiz.description ?? ""} />
             </div>
@@ -722,7 +753,7 @@ export default function QuizDetailPage({
           </ApiForm>
           <div className="mt-4 flex flex-wrap gap-3">
             <Link
-              href={`/quizzes/${quiz.id}/questions?mode=manage`}
+              href={quiz.lessonId ? `/courses/${quiz.courseId}/lessons/${quiz.lessonId}#quizzes` : `/quizzes/${quiz.id}?mode=manage`}
               className="inline-flex rounded-2xl border border-[#e8ddff] bg-[#faf7ff] px-5 py-3 text-sm font-semibold text-[#6b00ff]"
             >
               Edit questions
@@ -748,20 +779,18 @@ export default function QuizDetailPage({
               managerAttempts.map((attempt) => (
                 <div key={attempt.id} className="rounded-[20px] border border-[#efe6ff] bg-white p-4">
                   <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
-                    <div>
+                    <div className="space-y-3">
                       <div className="flex flex-wrap items-center gap-2">
                         <Badge tone="purple">Attempt {attempt.attemptNumber}</Badge>
                         <Badge tone={attempt.isSubmitted ? "green" : "purple"}>
                           {attempt.isSubmitted ? "Submitted" : "In progress"}
                         </Badge>
                         <Badge tone="slate">
-                          {typeof attempt.score === "number" ? `${attempt.score} points` : "Awaiting score"}
+                          {typeof attempt.score === "number" ? `${formatQuizScore(attempt.score)} of ${formatQuizScore(quizTotalPoints)} points` : "Awaiting score"}
                         </Badge>
                       </div>
-                      <p className="mt-3 font-semibold text-slate-950">{attempt.student.fullName}</p>
-                      <p className="mt-1 text-sm text-slate-600">
-                        {attempt.student.studentId ?? "No student ID"}
-                      </p>
+                      <p className="font-semibold text-slate-950">{attempt.student.fullName}</p>
+                      <p className="text-sm text-slate-600">{attempt.student.studentId ?? "No student ID"}</p>
                     </div>
                     <ApiActionButton
                       action={`/api/quizzes/attempts/${attempt.id}`}
@@ -773,6 +802,44 @@ export default function QuizDetailPage({
                       confirmMessage={`Delete attempt ${attempt.attemptNumber} for ${attempt.student.fullName}?`}
                     />
                   </div>
+                  {attempt.answers?.length ? (
+                    <div className="mt-4 space-y-3 rounded-2xl bg-[#faf7ff] p-4">
+                      <p className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-500">Marking</p>
+                      <div className="space-y-3">
+                        {attempt.answers.map((answer: any) => {
+                          const question = answer.quizQuestion?.questionBank;
+                          const answerData = answer.answerData ?? {};
+                          const selectedLabels = (answerData.selectedOptionIds ?? [])
+                            .map((selectedId: string) => question?.options?.find((option: any) => option.id === selectedId)?.optionText ?? selectedId)
+                            .filter(Boolean);
+                          const displayAnswer =
+                            question?.questionType === "STRUCTURAL"
+                              ? answerData.textAnswer || "No answer"
+                              : question?.questionType === "MATCHING"
+                                ? (answerData.matchingSelections ?? []).join(", ") || "No answer"
+                                : selectedLabels.length
+                                  ? selectedLabels.join(", ")
+                                  : "No answer";
+
+                          return (
+                            <div key={answer.id} className="rounded-2xl border border-white/70 bg-white p-3 text-sm text-slate-700">
+                              <p className="font-semibold text-slate-950">
+                                Q{answer.quizQuestion?.order ?? "?"}: {question?.questionText ?? "Question"}
+                              </p>
+                              <p className="mt-1 text-slate-600">Answer: {displayAnswer}</p>
+                              <p className="mt-1 text-slate-600">
+                                Score: {formatQuizScore(Number(answerData.scoreAwarded ?? 0))} of {formatQuizScore(Number(answerData.maxScore ?? 0))} points
+                                {answerData.isCorrect ? " � Correct" : " � Needs review"}
+                              </p>
+                              <p className="mt-1 text-slate-600">
+                                Correct: {(answerData.correctAnswers ?? []).join(", ") || "Not recorded"}
+                              </p>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  ) : null}
                 </div>
               ))
             ) : (
@@ -781,7 +848,7 @@ export default function QuizDetailPage({
           </div>
         </Panel>
       ) : activeAttempt ? (
-        <QuizAttemptWorkspace quiz={quiz} activeAttempt={activeAttempt} pastAttempts={pastAttempts} />
+        <QuizAttemptWorkspace quiz={quiz} activeAttempt={activeAttempt} pastAttempts={pastAttempts} quizTotalPoints={quizTotalPoints} />
       ) : (
         <Panel title="Ready To Start" subtitle="Confirm the details before the timer begins.">
           <div className="space-y-4">
@@ -821,6 +888,8 @@ function StartQuizButton({ quizId }: { quizId: string }) {
     />
   );
 }
+
+
 
 
 

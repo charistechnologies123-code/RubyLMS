@@ -1,8 +1,9 @@
-﻿import type { NextApiResponse } from "next";
+import type { NextApiResponse } from "next";
 import { prisma } from "@/lib/prisma";
 import { createAuditLog } from "@/lib/audit";
 import { withApiAuth, type AuthedNextApiRequest } from "@/lib/api";
 import { canManageCourse } from "@/lib/permissions";
+import { parseLmsDateTimeLocalValue } from "@/lib/lmsTime";
 
 type QuizQuestionPayload = {
   questionText: string;
@@ -172,7 +173,7 @@ async function handler(req: AuthedNextApiRequest, res: NextApiResponse) {
           timeLimitMinutes: Number(timeLimitMinutes),
           maxAttempts: maxAttempts ? Number(maxAttempts) : 1,
           status: status ?? undefined,
-          dueAt: dueAt ? new Date(dueAt) : dueAt === "" ? null : undefined,
+          dueAt: dueAt ? parseLmsDateTimeLocalValue(dueAt) : dueAt === "" ? null : undefined,
           archivedAt:
             typeof archived === "boolean"
               ? archived
@@ -259,6 +260,7 @@ async function handler(req: AuthedNextApiRequest, res: NextApiResponse) {
 }
 
 export default withApiAuth(handler, ["ADMIN", "INSTRUCTOR", "STUDENT"]);
+
 
 
 

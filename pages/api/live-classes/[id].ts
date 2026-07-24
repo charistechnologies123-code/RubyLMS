@@ -2,6 +2,7 @@ import type { NextApiResponse } from "next";
 import { Prisma } from "@prisma/client";
 import { withApiAuth, type AuthedNextApiRequest } from "@/lib/api";
 import { canDeleteLiveClass, canManageLiveClass, isLiveClassJoinable } from "@/lib/liveClasses";
+import { parseLmsDateTimeLocalValue } from "@/lib/lmsTime";
 import { prisma } from "@/lib/prisma";
 
 const liveClassInclude = {
@@ -116,8 +117,8 @@ async function handler(req: AuthedNextApiRequest, res: NextApiResponse) {
         meetingUrl?: string;
       };
 
-      const startsAtDate = startsAt ? new Date(startsAt) : null;
-      const endsAtDate = endsAt ? new Date(endsAt) : null;
+      const startsAtDate = startsAt ? parseLmsDateTimeLocalValue(startsAt) : null;
+      const endsAtDate = endsAt ? parseLmsDateTimeLocalValue(endsAt) : null;
       const normalizedMeetingUrl = typeof meetingUrl === "string" ? meetingUrl.trim() : undefined;
 
       if (startsAtDate && Number.isNaN(startsAtDate.getTime())) {
@@ -181,3 +182,7 @@ async function handler(req: AuthedNextApiRequest, res: NextApiResponse) {
 }
 
 export default withApiAuth(handler, ["ADMIN", "INSTRUCTOR", "STUDENT"]);
+
+
+
+

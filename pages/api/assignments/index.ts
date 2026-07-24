@@ -6,6 +6,7 @@ import { withApiAuth, type AuthedNextApiRequest } from "@/lib/api";
 import { getVisibleAssignmentWhere } from "@/lib/lms";
 import { normalizeFileInput } from "@/lib/media";
 import { canManageCourse } from "@/lib/permissions";
+import { parseLmsDateTimeLocalValue } from "@/lib/lmsTime";
 
 export const config = {
   api: {
@@ -94,7 +95,7 @@ async function handler(req: AuthedNextApiRequest, res: NextApiResponse) {
         instructions: instructions || null,
         attachmentUrl: normalizedAttachmentUrl,
         status: status ?? "DRAFT",
-        dueAt: dueAt ? new Date(dueAt) : null,
+        dueAt: dueAt ? parseLmsDateTimeLocalValue(dueAt) : null,
         submissionType: submissionType ?? "FILE",
         createdById: req.session.userId,
       },
@@ -123,3 +124,4 @@ async function handler(req: AuthedNextApiRequest, res: NextApiResponse) {
 }
 
 export default withApiAuth(handler, ["ADMIN", "INSTRUCTOR", "STUDENT"]);
+

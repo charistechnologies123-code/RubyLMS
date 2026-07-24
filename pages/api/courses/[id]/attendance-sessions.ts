@@ -5,6 +5,7 @@ import { prisma } from "@/lib/prisma";
 import { withApiAuth, type AuthedNextApiRequest } from "@/lib/api";
 import { getManagedCourseWhere } from "@/lib/courseManagers";
 import { weekdayFromDate } from "@/lib/attendance";
+import { parseLmsDateTimeLocalValue, parseLmsDateValue } from "@/lib/lmsTime";
 
 async function handler(req: AuthedNextApiRequest, res: NextApiResponse) {
   const courseId = String(req.query.id ?? "");
@@ -87,9 +88,9 @@ async function handler(req: AuthedNextApiRequest, res: NextApiResponse) {
       return res.status(400).json({ error: "title and sessionDate are required." });
     }
 
-    const sessionDateTime = new Date(`${sessionDate}T12:00:00`);
+    const sessionDateTime = parseLmsDateValue(sessionDate);
 
-    if (Number.isNaN(sessionDateTime.getTime())) {
+    if (!sessionDateTime || Number.isNaN(sessionDateTime.getTime())) {
       return res.status(400).json({ error: "Invalid session date." });
     }
 
@@ -105,8 +106,8 @@ async function handler(req: AuthedNextApiRequest, res: NextApiResponse) {
         createdById: req.session.userId,
         title: title.trim(),
         sessionDate: sessionDateTime,
-        startsAt: startsAt ? new Date(startsAt) : null,
-        endsAt: endsAt ? new Date(endsAt) : null,
+        startsAt: startsAt ? parseLmsDateTimeLocalValue(startsAt) : null,
+        endsAt: endsAt ? parseLmsDateTimeLocalValue(endsAt) : null,
       },
     });
 
@@ -139,3 +140,4 @@ async function handler(req: AuthedNextApiRequest, res: NextApiResponse) {
 }
 
 export default withApiAuth(handler, ["ADMIN", "INSTRUCTOR", "STUDENT"]);
+

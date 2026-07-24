@@ -4,6 +4,7 @@ import { createAuditLog } from "@/lib/audit";
 import { normalizeFileInput } from "@/lib/media";
 import { withApiAuth, type AuthedNextApiRequest } from "@/lib/api";
 import { canManageCourse } from "@/lib/permissions";
+import { parseLmsDateTimeLocalValue } from "@/lib/lmsTime";
 
 export const config = {
   api: {
@@ -75,7 +76,7 @@ async function handler(req: AuthedNextApiRequest, res: NextApiResponse) {
       description: description ?? undefined,
       instructions: typeof instructions === "undefined" ? undefined : instructions || null,
       attachmentUrl: normalizedAttachmentUrl,
-      dueAt: dueAt ? new Date(dueAt) : dueAt === "" ? null : undefined,
+      dueAt: dueAt ? parseLmsDateTimeLocalValue(dueAt) : dueAt === "" ? null : undefined,
       submissionType: submissionType ?? undefined,
       status: status ?? undefined,
     },
@@ -93,3 +94,4 @@ async function handler(req: AuthedNextApiRequest, res: NextApiResponse) {
 }
 
 export default withApiAuth(handler, ["ADMIN", "INSTRUCTOR"]);
+

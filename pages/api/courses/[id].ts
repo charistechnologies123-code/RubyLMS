@@ -6,6 +6,7 @@ import { withApiAuth, type AuthedNextApiRequest } from "@/lib/api";
 import { normalizeManagerIds } from "@/lib/courseManagers";
 import { canManageCourse } from "@/lib/permissions";
 import { normalizeAttendanceDays } from "@/lib/attendance";
+import { ensureCourseAttendanceSessions } from "@/lib/attendanceSessions";
 
 async function handler(req: AuthedNextApiRequest, res: NextApiResponse) {
   const courseId = String(req.query.id);
@@ -133,6 +134,13 @@ async function handler(req: AuthedNextApiRequest, res: NextApiResponse) {
     },
   });
 
+  await ensureCourseAttendanceSessions({
+    courseId: updatedCourse.id,
+    courseTitle: updatedCourse.title,
+    attendanceDays: normalizeAttendanceDays(updatedCourse.attendanceDays),
+    createdById: req.session.userId,
+  });
+
   await createAuditLog({
     actorId: req.session.userId,
     action: "COURSE_UPDATED",
@@ -153,3 +161,5 @@ export const config = {
     },
   },
 };
+
+

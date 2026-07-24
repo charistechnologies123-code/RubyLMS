@@ -1,7 +1,8 @@
-﻿import type { NextApiResponse } from "next";
+import type { NextApiResponse } from "next";
 import { Prisma } from "@prisma/client";
 import { withApiAuth, type AuthedNextApiRequest } from "@/lib/api";
 import { canManageLiveClass } from "@/lib/liveClasses";
+import { parseLmsDateTimeLocalValue } from "@/lib/lmsTime";
 import { prisma } from "@/lib/prisma";
 
 const liveClassInclude = {
@@ -206,10 +207,10 @@ async function handler(req: AuthedNextApiRequest, res: NextApiResponse) {
         return res.status(403).json({ error: "Only course instructors, managers, and admins can schedule live classes." });
       }
 
-      const startsAtDate = new Date(startsAt);
-      const endsAtDate = endsAt ? new Date(endsAt) : null;
+      const startsAtDate = parseLmsDateTimeLocalValue(startsAt);
+      const endsAtDate = endsAt ? parseLmsDateTimeLocalValue(endsAt) : null;
 
-      if (Number.isNaN(startsAtDate.getTime())) {
+      if (!startsAtDate || Number.isNaN(startsAtDate.getTime())) {
         return res.status(400).json({ error: "Invalid startsAt value." });
       }
 
@@ -251,3 +252,4 @@ async function handler(req: AuthedNextApiRequest, res: NextApiResponse) {
 }
 
 export default withApiAuth(handler, ["ADMIN", "INSTRUCTOR", "STUDENT"]);
+

@@ -1,10 +1,11 @@
-﻿import type { NextApiResponse } from "next";
+import type { NextApiResponse } from "next";
 import { prisma } from "@/lib/prisma";
 import { createAuditLog } from "@/lib/audit";
 import { notifyUsers } from "@/lib/notifications";
 import { withApiAuth, type AuthedNextApiRequest } from "@/lib/api";
 import { getVisibleQuizWhere } from "@/lib/lms";
 import { canManageCourse } from "@/lib/permissions";
+import { parseLmsDateTimeLocalValue } from "@/lib/lmsTime";
 
 type QuestionPayload = {
   questionText: string;
@@ -108,7 +109,7 @@ async function handler(req: AuthedNextApiRequest, res: NextApiResponse) {
           status: status ?? "DRAFT",
           timeLimitMinutes: Number(timeLimitMinutes),
           maxAttempts: maxAttempts ? Number(maxAttempts) : 1,
-          dueAt: dueAt ? new Date(dueAt) : null,
+          dueAt: dueAt ? parseLmsDateTimeLocalValue(dueAt) : null,
           shuffleQuestions: shuffleQuestions !== "false",
           shuffleOptions: shuffleOptions === "true",
           showScoreImmediately: showScoreImmediately !== "false",
@@ -173,3 +174,4 @@ async function handler(req: AuthedNextApiRequest, res: NextApiResponse) {
 }
 
 export default withApiAuth(handler, ["ADMIN", "INSTRUCTOR", "STUDENT"]);
+

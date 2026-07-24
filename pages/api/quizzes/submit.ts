@@ -3,6 +3,7 @@ import { prisma } from "@/lib/prisma";
 import { notifyUsers } from "@/lib/notifications";
 import { canStudentSubmitBeforeDueDate } from "@/lib/lms";
 import { withApiAuth, type AuthedNextApiRequest } from "@/lib/api";
+import { scoreQuizAttempt } from "@/lib/quizScoring";
 
 type SubmittedAnswer = {
   quizQuestionId: string;
@@ -90,42 +91,22 @@ async function handler(req: AuthedNextApiRequest, res: NextApiResponse) {
     return res.status(400).json({ error: "This attempt was already submitted." });
   }
 
-  const answersByQuestion = new Map(answers.map((answer) => [answer.quizQuestionId, answer]));
+  const questionSnapshots = quiz.quizQuestions.map((question) => ({
+    id: question.id,
+    questionText: question.questionBank.questionText,
+    questionType: question.questionBank.questionType,
+    marks: question.marksOverride ?? question.questionBank.marks,
+    questionData: question.questionBank.questionData,
+    options: question.questionBank.options.map((option) => ({
+      id: option.id,
+      optionText: option.optionText,
+      isCorrect: option.isCorrect,
+    })),
+  }));
 
-  const score = quiz.quizQuestions.reduce((total, question) => {
-    const questionType = question.questionBank.questionType;
-    const questionData = normalizeQuestionData(question.questionBank.questionData);
-    const submittedAnswer = answersByQuestion.get(question.id);
-    const marks = question.marksOverride ?? question.questionBank.marks;
-
-    let isCorrect = false;
-
-    if (questionType === "STRUCTURAL") {
-      const acceptedAnswers = (questionData.acceptedAnswers ?? [questionData.answerText ?? ""]).map(normalizeText).filter(Boolean);
-      const studentAnswer = normalizeText(submittedAnswer?.textAnswer ?? "");
-      isCorrect = acceptedAnswers.length > 0 && acceptedAnswers.includes(studentAnswer);
-    } else if (questionType === "MATCHING") {
-      const matchingPairs = questionData.matchingPairs ?? [];
-      const selectedMatches = submittedAnswer?.matchingSelections ?? [];
-      isCorrect =
-        matchingPairs.length > 0 &&
-        matchingPairs.length === selectedMatches.length &&
-        matchingPairs.every((pair, index) => normalizeText(pair.answerText) === normalizeText(selectedMatches[index] ?? ""));
-    } else {
-      const correctOptionIds = question.questionBank.options
-        .filter((option) => option.isCorrect)
-        .map((option) => option.id)
-        .sort();
-
-      const selectedIds = (submittedAnswer?.selectedOptionIds ?? []).filter(Boolean).sort();
-
-      isCorrect =
-        correctOptionIds.length === selectedIds.length &&
-        correctOptionIds.every((optionId, index) => optionId === selectedIds[index]);
-    }
-
-    return total + (isCorrect ? marks : 0);
-  }, 0);
+  const scoring = scoreQuizAttempt(questionSnapshots, answers);
+  const score = scoring.totalScore;
+  const breakdownByQuestionId = new Map(scoring.breakdown.map((item) => [item.quizQuestionId, item]));
 
   const submittedAttempt = await prisma.$transaction(async (tx) => {
     await tx.quizAnswer.deleteMany({
@@ -148,6 +129,10 @@ async function handler(req: AuthedNextApiRequest, res: NextApiResponse) {
               selectedOptionIds: answer.selectedOptionIds ?? [],
               matchingSelections: answer.matchingSelections ?? [],
               textAnswer: answer.textAnswer ?? "",
+              scoreAwarded: breakdownByQuestionId.get(answer.quizQuestionId)?.earnedScore ?? 0,
+              maxScore: breakdownByQuestionId.get(answer.quizQuestionId)?.maxScore ?? 0,
+              isCorrect: breakdownByQuestionId.get(answer.quizQuestionId)?.isCorrect ?? false,
+              correctAnswers: breakdownByQuestionId.get(answer.quizQuestionId)?.correctAnswers ?? [],
             },
           })),
         },

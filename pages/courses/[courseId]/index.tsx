@@ -492,7 +492,8 @@ export default function CourseWorkspacePage({
                           </label>
                         </>
                       )}
-                      <ImageUploadField
+                      <div className="md:col-span-2">
+                        <ImageUploadField
                         label="Course thumbnail"
                         name="thumbnailUrl"
                         defaultValue={course.thumbnailUrl ?? ""}
@@ -501,8 +502,10 @@ export default function CourseWorkspacePage({
                         maxFileSizeKb={750}
                         previewClassName="h-24 w-40 rounded-[20px]"
                       />
-                      <FormField label="Description" name="description" as="textarea" defaultValue={course.description} required />
-                      <WeekdayCheckboxGroup name="attendanceDays" defaultValues={course.attendanceDays} />
+                      </div>
+                      <div className="md:col-span-2">
+                        <FormField label="Description" name="description" as="textarea" defaultValue={course.description} required />
+                      </div>
                     </ApiForm>
                   </div>
                 ) : null}

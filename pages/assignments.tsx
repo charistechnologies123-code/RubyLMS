@@ -12,6 +12,7 @@ import FormField from "@/components/ui/FormField";
 import Panel from "@/components/ui/Panel";
 import { formatDate, formatShortDate } from "@/lib/format";
 import { canStudentSubmitBeforeDueDate, getVisibleAssignmentWhere, getVisibleCourseWhere } from "@/lib/lms";
+import { toLmsDateTimeLocalValue } from "@/lib/lmsTime";
 import { requirePageAuth } from "@/lib/pageAuth";
 import { prisma } from "@/lib/prisma";
 import { serialize } from "@/lib/serialize";
@@ -63,14 +64,6 @@ export default function AssignmentsPage({
   courses,
   assignments,
 }: InferGetServerSidePropsType<typeof getServerSideProps>) {
-  function toDateTimeLocalValue(value?: string | Date | null) {
-    if (!value) {
-      return "";
-    }
-
-    return new Date(value).toISOString().slice(0, 16);
-  }
-
   const canManage = session.role !== "STUDENT";
   const [showCreateAssignment, setShowCreateAssignment] = useState(false);
   const [activeSubmissionAssignmentId, setActiveSubmissionAssignmentId] = useState<string | null>(null);
@@ -297,7 +290,7 @@ export default function AssignmentsPage({
                             { label: "Published", value: "PUBLISHED" },
                           ]}
                         />
-                        <FormField label="Due date" name="dueAt" type="datetime-local" defaultValue={toDateTimeLocalValue(assignment.dueAt)} />
+                        <FormField label="Due date" name="dueAt" type="datetime-local" defaultValue={toLmsDateTimeLocalValue(assignment.dueAt)} />
                         <div className="md:col-span-2">
                           <FormField label="Description" name="description" as="textarea" defaultValue={assignment.description} required />
                         </div>
