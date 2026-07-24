@@ -70,7 +70,7 @@ export default function LoginPage() {
             <h1 className="mt-4 font-heading text-3xl text-slate-950 sm:text-4xl">Sign in to continue</h1>
           </div>
 
-          <div className="mt-6 grid grid-cols-3 gap-3 rounded-[22px] bg-[#f6f0ff] p-2 sm:gap-2">
+          <div className="mt-6 grid grid-cols-3 gap-4 rounded-[22px] bg-[#f6f0ff] p-2 sm:gap-2">
             {(["STUDENT", "INSTRUCTOR", "ADMIN"] as Role[]).map((currentRole) => (
               <button
                 key={currentRole}
@@ -87,7 +87,7 @@ export default function LoginPage() {
             ))}
           </div>
 
-          <form className="mt-6 space-y-5" onSubmit={handleSubmit}>
+          <form className="mt-8 space-y-5 sm:mt-6" onSubmit={handleSubmit}>
             <label className="block">
               <span className="text-sm font-semibold text-slate-700">{identifierLabel}</span>
               <input
