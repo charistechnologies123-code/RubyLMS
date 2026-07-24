@@ -70,13 +70,13 @@ export default function LoginPage() {
             <h1 className="mt-4 font-heading text-3xl text-slate-950 sm:text-4xl">Sign in to continue</h1>
           </div>
 
-          <div className="mt-6 grid grid-cols-3 gap-2 rounded-[22px] bg-[#f6f0ff] p-2">
+          <div className="mt-6 grid grid-cols-3 gap-3 rounded-[22px] bg-[#f6f0ff] p-2 sm:gap-2">
             {(["STUDENT", "INSTRUCTOR", "ADMIN"] as Role[]).map((currentRole) => (
               <button
                 key={currentRole}
                 type="button"
                 onClick={() => setRole(currentRole)}
-                className={`rounded-2xl px-2 py-3 text-xs font-semibold whitespace-nowrap transition sm:px-3 sm:text-sm ${
+                className={`min-w-0 w-full rounded-2xl px-1 py-3 text-[10px] leading-none font-semibold whitespace-nowrap transition sm:px-3 sm:text-sm sm:leading-normal ${
                   role === currentRole
                     ? "bg-[linear-gradient(135deg,#6b00ff,#8c3cff)] text-white shadow-lg"
                     : "text-slate-600 hover:bg-white"
