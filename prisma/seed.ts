@@ -226,7 +226,6 @@ async function main() {
       type: "PDF",
       courseId: course.id,
       lessonId: lessonOne.id,
-      lessonPageId: lessonPageOne.id,
       externalUrl: "https://example.com/course-handbook.pdf",
     },
     create: {
@@ -235,7 +234,6 @@ async function main() {
       type: "PDF",
       courseId: course.id,
       lessonId: lessonOne.id,
-      lessonPageId: lessonPageOne.id,
       externalUrl: "https://example.com/course-handbook.pdf",
     },
   });

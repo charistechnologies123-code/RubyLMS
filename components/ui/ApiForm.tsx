@@ -13,6 +13,7 @@ type ApiFormProps = {
   className?: string;
   resetOnSuccess?: boolean;
   onSuccess?: () => void;
+  submitClassName?: string;
 };
 
 export default function ApiForm({
@@ -22,6 +23,7 @@ export default function ApiForm({
   successMessage,
   children,
   className = "",
+  submitClassName = "",
   resetOnSuccess = method === "POST",
   onSuccess,
 }: ApiFormProps) {
@@ -85,7 +87,7 @@ export default function ApiForm({
       <button
         type="submit"
         disabled={submitting}
-        className="inline-flex rounded-2xl bg-[linear-gradient(135deg,#6b00ff,#8e42ff)] px-5 py-3 text-sm font-semibold text-white shadow-lg transition hover:opacity-95 disabled:cursor-not-allowed disabled:opacity-60"
+        className={`inline-flex rounded-2xl bg-[linear-gradient(135deg,#6b00ff,#8e42ff)] px-5 py-3 text-sm font-semibold text-white shadow-lg transition hover:opacity-95 disabled:cursor-not-allowed disabled:opacity-60 ${submitClassName}`}
       >
         {submitting ? "Saving..." : submitLabel}
       </button>

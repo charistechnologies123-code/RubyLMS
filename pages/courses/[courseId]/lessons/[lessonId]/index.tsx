@@ -50,7 +50,6 @@ type ModulePageItem = {
   progress: Array<{
     completed: boolean;
   }>;
-  resources: LessonPageResource[];
 };
 
 function getPlainTextPreview(content: string) {
@@ -213,9 +212,6 @@ export async function getServerSideProps(
                   },
                 }
               : false,
-          resources: {
-            orderBy: { createdAt: "desc" },
-          },
         },
       },
       resources: {
@@ -614,7 +610,6 @@ export default function LessonPage({
                     <div>
                       <div className="flex flex-wrap items-center gap-2">
                         <Badge tone="purple">Page</Badge>
-                        <Badge tone="slate">{page.resources.length} resources</Badge>
                         <Badge tone="slate">{formatEstimatedDuration(page.estimatedDurationMinutes)}</Badge>
                         {session.role === "STUDENT" ? (
                           <Badge tone={page.progress[0]?.completed ? "green" : "red"}>

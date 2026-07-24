@@ -29,7 +29,8 @@ export function weekdayFromDate(value: string | Date) {
   const date = typeof value === 'string' ? new Date(value) : value;
   const weekday = getLmsDateParts(date).weekday;
 
-  return WEEKDAY_OPTIONS[weekday]?.value ?? null;
+  const mondayFirstIndex = (weekday + 6) % 7;
+  return WEEKDAY_OPTIONS[mondayFirstIndex]?.value ?? null;
 }
 
 function lmsDateKey(value: Date) {

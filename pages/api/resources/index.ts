@@ -10,10 +10,9 @@ async function handler(req: AuthedNextApiRequest, res: NextApiResponse) {
     return res.status(405).json({ error: "Method not allowed" });
   }
 
-  const { courseId, lessonId, lessonPageId, title, type, fileUrl, externalUrl } = req.body as {
+  const { courseId, lessonId, title, type, fileUrl, externalUrl } = req.body as {
     courseId?: string;
     lessonId?: string;
-    lessonPageId?: string;
     title?: string;
     type?: "PDF" | "DOC" | "DOCX" | "VIDEO_LINK" | "EXTERNAL_LINK" | "IMAGE" | "OTHER";
     fileUrl?: string;
@@ -56,7 +55,6 @@ async function handler(req: AuthedNextApiRequest, res: NextApiResponse) {
     data: {
       courseId,
       lessonId: lessonId || null,
-      lessonPageId: lessonPageId || null,
       title,
       type,
       fileUrl: normalizedFileUrl,

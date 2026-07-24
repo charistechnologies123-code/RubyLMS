@@ -14,7 +14,6 @@ import { getVisibleCourseWhere } from "@/lib/lms";
 import { requirePageAuth } from "@/lib/pageAuth";
 import { prisma } from "@/lib/prisma";
 import { serialize } from "@/lib/serialize";
-import { toLmsDateInputValue } from "@/lib/lmsTime";
 
 export async function getServerSideProps(ctx: GetServerSidePropsContext) {
   return requirePageAuth(ctx, ["ADMIN", "INSTRUCTOR", "STUDENT"], async (session) => {
@@ -29,9 +28,6 @@ export async function getServerSideProps(ctx: GetServerSidePropsContext) {
         status: true,
         createdAt: true,
         attendanceDays: true,
-        startDate: true,
-        endDate: true,
-        durationWeeks: true,
         instructor: {
           select: { id: true, fullName: true },
         },
@@ -317,6 +313,7 @@ export default function CoursesDirectoryPage({
                           successMessage="Course updated."
                           resetOnSuccess={false}
                           className="grid gap-4"
+                          submitClassName="w-fit justify-self-start"
                         >
                           <FormField label="Course title" name="title" defaultValue={course.title} required />
                           <FormField
@@ -331,11 +328,6 @@ export default function CoursesDirectoryPage({
                             ]}
                           />
                           <WeekdayCheckboxGroup name="attendanceDays" defaultValues={course.attendanceDays} />
-                          <div className="grid gap-4 md:grid-cols-3">
-                            <FormField label="Course start date" name="startDate" type="date" defaultValue={toLmsDateInputValue(course.startDate)} required />
-                            <FormField label="Course end date" name="endDate" type="date" defaultValue={toLmsDateInputValue(course.endDate)} required />
-                            <FormField label="Duration in weeks" name="durationWeeks" type="number" min={1} defaultValue={course.durationWeeks ?? ""} required />
-                          </div>
                           {session.role === "ADMIN" ? (
                             <>
                               <FormField

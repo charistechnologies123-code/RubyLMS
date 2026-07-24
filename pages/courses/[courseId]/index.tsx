@@ -23,7 +23,6 @@ import { formatDate, formatShortDate } from "@/lib/format";
 import { canManageCourse } from "@/lib/permissions";
 import { prisma } from "@/lib/prisma";
 import { serialize } from "@/lib/serialize";
-import { toLmsDateInputValue } from "@/lib/lmsTime";
 
 type CourseWorkspaceProps = {
   session: NonNullable<ReturnType<typeof getSessionFromPageContext>>;
@@ -445,6 +444,7 @@ export default function CourseWorkspacePage({
                       successMessage="Course updated."
                       resetOnSuccess={false}
                       className="grid gap-4"
+                      submitClassName="w-fit justify-self-start"
                       onSuccess={() => setActiveComposer(null)}
                     >
                       <FormField label="Course title" name="title" defaultValue={course.title} required />
@@ -459,11 +459,6 @@ export default function CourseWorkspacePage({
                           { label: "Archived", value: "ARCHIVED" },
                         ]}
                       />
-                      <div className="grid gap-4 md:grid-cols-3">
-                        <FormField label="Course start date" name="startDate" type="date" defaultValue={toLmsDateInputValue(course.startDate)} required />
-                        <FormField label="Course end date" name="endDate" type="date" defaultValue={toLmsDateInputValue(course.endDate)} required />
-                        <FormField label="Duration in weeks" name="durationWeeks" type="number" min={1} defaultValue={course.durationWeeks ?? ""} required />
-                      </div>
                       <WeekdayCheckboxGroup name="attendanceDays" defaultValues={course.attendanceDays} />
                       {session.role === "ADMIN" && (
                         <>

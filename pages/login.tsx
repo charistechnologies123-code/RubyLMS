@@ -68,9 +68,6 @@ export default function LoginPage() {
               Charis Technologies
             </div>
             <h1 className="mt-4 font-heading text-3xl text-slate-950 sm:text-4xl">Sign in to continue</h1>
-            <p className="mt-2 text-sm text-slate-600">
-              Students use email or student ID. Instructors and admins use email only.
-            </p>
           </div>
 
           <div className="mt-6 grid grid-cols-3 gap-2 rounded-[22px] bg-[#f6f0ff] p-2">
